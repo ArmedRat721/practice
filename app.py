@@ -1,19 +1,12 @@
 # app.py
+# Plotly + Google Fonts(Noto Sans KR) → 한글 깨짐 완전 해결
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-from matplotlib.patches import Patch
+import plotly.graph_objects as go
 
 # ─────────────────────────────────────────
-# 한글 폰트 설정 (Windows 기반)
-# ─────────────────────────────────────────
-mpl.rcParams["font.family"]       = "Malgun Gothic"   # 맑은 고딕 (Windows 기본 한글 폰트)
-mpl.rcParams["axes.unicode_minus"] = False             # 마이너스 기호 깨짐 방지
-
-# ─────────────────────────────────────────
-# 페이지 설정 & CSS
+# 페이지 설정
 # ─────────────────────────────────────────
 st.set_page_config(
     page_title="AIV 생명 보호 실드",
@@ -22,8 +15,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ─────────────────────────────────────────
+# Google Fonts + CSS 주입
+# Noto Sans KR을 웹폰트로 직접 로드 → 서버 폰트 무관
+# ─────────────────────────────────────────
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;800&display=swap" rel="stylesheet">
+
 <style>
+    /* 전체 앱 폰트 */
+    html, body, [class*="css"] {
+        font-family: 'Noto Sans KR', sans-serif !important;
+    }
+
     .stApp { background-color: #f8fafc; }
 
     [data-testid="stSidebar"] {
@@ -32,6 +36,7 @@ st.markdown("""
     }
 
     .main-title {
+        font-family: 'Noto Sans KR', sans-serif;
         font-size: 2rem;
         font-weight: 800;
         color: #1e293b;
@@ -39,12 +44,13 @@ st.markdown("""
         margin-bottom: 0.2rem;
     }
     .sub-title {
+        font-family: 'Noto Sans KR', sans-serif;
         font-size: 0.95rem;
         color: #64748b;
         margin-bottom: 1.8rem;
     }
-
     .section-header {
+        font-family: 'Noto Sans KR', sans-serif;
         font-size: 1.05rem;
         font-weight: 700;
         color: #1e293b;
@@ -70,12 +76,6 @@ st.markdown("""
         font-weight: 800 !important;
     }
 
-    [data-testid="stFileUploader"] {
-        background: #ffffff;
-        border: 2px dashed #cbd5e1;
-        border-radius: 10px;
-    }
-
     .stTabs [aria-selected="true"] {
         color: #3b82f6 !important;
         border-bottom-color: #3b82f6 !important;
@@ -84,30 +84,29 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-# 그래프 공통 스타일 (흰 배경)
+# Plotly 공통 폰트·레이아웃
+# "Noto Sans KR"을 직접 지정
 # ─────────────────────────────────────────
-BG      = "#ffffff"
-GRID    = "#e2e8f0"
-TEXT    = "#1e293b"
+KR_FONT = "Noto Sans KR"
 ACCENT  = "#3b82f6"
 ACCENT2 = "#10b981"
 ACCENT3 = "#f59e0b"
+TEXT    = "#1e293b"
+GRID    = "#e2e8f0"
 
-def apply_style(fig, ax, title=""):
-    fig.patch.set_facecolor(BG)
-    ax.set_facecolor(BG)
-    ax.tick_params(colors=TEXT, labelsize=10)
-    ax.xaxis.label.set_color(TEXT)
-    ax.yaxis.label.set_color(TEXT)
-    ax.title.set_color(TEXT)
-    ax.title.set_fontsize(13)
-    ax.title.set_fontweight("bold")
-    for spine in ax.spines.values():
-        spine.set_edgecolor(GRID)
-    ax.yaxis.grid(True, color=GRID, linewidth=0.8, linestyle="--")
-    ax.set_axisbelow(True)
-    if title:
-        ax.set_title(title, pad=12)
+def base_layout(title=""):
+    return dict(
+        title=dict(text=title, font=dict(family=KR_FONT, size=15, color=TEXT), x=0.02),
+        font=dict(family=KR_FONT, size=12, color=TEXT),
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        margin=dict(l=50, r=20, t=55, b=45),
+        xaxis=dict(showgrid=False, linecolor=GRID, tickfont=dict(family=KR_FONT, size=12)),
+        yaxis=dict(gridcolor=GRID, gridwidth=1, linecolor=GRID, tickfont=dict(family=KR_FONT, size=12)),
+        legend=dict(font=dict(family=KR_FONT, size=12), bgcolor="rgba(255,255,255,0.9)",
+                    bordercolor=GRID, borderwidth=1),
+        hoverlabel=dict(font=dict(family=KR_FONT)),
+    )
 
 # ─────────────────────────────────────────
 # 타이틀
@@ -175,63 +174,64 @@ st.markdown('<div class="section-header">📍 지역별 분석</div>', unsafe_al
 col_a, col_b = st.columns(2)
 
 with col_a:
-    fig1, ax1 = plt.subplots(figsize=(6, 4))
     colors = [ACCENT if t == "도시" else ACCENT2 for t in filtered_df["유형"]]
-    bars = ax1.bar(filtered_df["지역"], filtered_df["치명률"],
-                   color=colors, width=0.6, edgecolor="none")
-    for bar in bars:
-        ax1.text(bar.get_x() + bar.get_width() / 2,
-                 bar.get_height() + 0.15,
-                 f"{bar.get_height():.1f}%",
-                 ha="center", va="bottom", color=TEXT, fontsize=9, fontweight="bold")
-    ax1.set_ylabel("치명률 (%)")
-    apply_style(fig1, ax1, "지역별 치명률")
-    legend_el = [Patch(facecolor=ACCENT, label="도시"), Patch(facecolor=ACCENT2, label="지방")]
-    ax1.legend(handles=legend_el, framealpha=0.9, fontsize=9)
-    fig1.tight_layout()
-    st.pyplot(fig1)
+    fig1 = go.Figure()
+    fig1.add_trace(go.Bar(
+        x=filtered_df["지역"],
+        y=filtered_df["치명률"],
+        marker_color=colors,
+        text=[f"{v:.1f}%" for v in filtered_df["치명률"]],
+        textposition="outside",
+        textfont=dict(family=KR_FONT, size=11, color=TEXT),
+        hovertemplate="%{x}: %{y:.2f}%<extra></extra>",
+    ))
+    fig1.update_layout(**base_layout("지역별 치명률"),
+                       yaxis_title="치명률 (%)",
+                       showlegend=False)
+    st.plotly_chart(fig1, use_container_width=True)
 
 with col_b:
-    grouped = filtered_df.groupby("유형")["치명률"].mean()
-    fig2, ax2 = plt.subplots(figsize=(6, 4))
-    bar_colors = [ACCENT if t == "도시" else ACCENT2 for t in grouped.index]
-    bars2 = ax2.bar(grouped.index, grouped.values, color=bar_colors,
-                    width=0.4, edgecolor="none")
-    for bar in bars2:
-        ax2.text(bar.get_x() + bar.get_width() / 2,
-                 bar.get_height() + 0.1,
-                 f"{bar.get_height():.2f}%",
-                 ha="center", va="bottom", color=TEXT, fontsize=10, fontweight="bold")
-    ax2.set_ylabel("평균 치명률 (%)")
-    apply_style(fig2, ax2, "도시 vs 지방 평균 치명률")
-    fig2.tight_layout()
-    st.pyplot(fig2)
+    grouped = filtered_df.groupby("유형")["치명률"].mean().reset_index()
+    bar_colors = [ACCENT if t == "도시" else ACCENT2 for t in grouped["유형"]]
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(
+        x=grouped["유형"],
+        y=grouped["치명률"],
+        marker_color=bar_colors,
+        text=[f"{v:.2f}%" for v in grouped["치명률"]],
+        textposition="outside",
+        textfont=dict(family=KR_FONT, size=12, color=TEXT),
+        hovertemplate="%{x}: %{y:.2f}%<extra></extra>",
+        width=0.4,
+    ))
+    fig2.update_layout(**base_layout("도시 vs 지방 평균 치명률"),
+                       yaxis_title="평균 치명률 (%)",
+                       showlegend=False)
+    st.plotly_chart(fig2, use_container_width=True)
 
 # ─────────────────────────────────────────
 # 4. 산점도
 # ─────────────────────────────────────────
 st.markdown('<div class="section-header">📡 보급률 vs 감염재생산지수(R)</div>', unsafe_allow_html=True)
 
-fig3, ax3 = plt.subplots(figsize=(9, 4))
-scatter_colors = [ACCENT if t == "도시" else ACCENT2 for t in filtered_df["유형"]]
-ax3.scatter(filtered_df["보급률"], filtered_df["R값"],
-            c=scatter_colors, s=130, zorder=5, edgecolors="#cbd5e1", linewidths=1)
-
-for i in range(len(filtered_df)):
-    ax3.text(
-        filtered_df["보급률"].iloc[i] + 0.3,
-        filtered_df["R값"].iloc[i] + 0.03,
-        filtered_df["지역"].iloc[i],
-        color=TEXT, fontsize=10,
-    )
-
-ax3.set_xlabel("보급률 (%)")
-ax3.set_ylabel("R값")
-apply_style(fig3, ax3, "보급률 vs R값 관계")
-leg3 = [Patch(facecolor=ACCENT, label="도시"), Patch(facecolor=ACCENT2, label="지방")]
-ax3.legend(handles=leg3, framealpha=0.9, fontsize=9)
-fig3.tight_layout()
-st.pyplot(fig3)
+fig3 = go.Figure()
+for utype, color in [("도시", ACCENT), ("지방", ACCENT2)]:
+    sub = filtered_df[filtered_df["유형"] == utype]
+    fig3.add_trace(go.Scatter(
+        x=sub["보급률"],
+        y=sub["R값"],
+        mode="markers+text",
+        name=utype,
+        marker=dict(color=color, size=14, line=dict(color="white", width=1.5)),
+        text=sub["지역"],
+        textposition="top right",
+        textfont=dict(family=KR_FONT, size=12, color=TEXT),
+        hovertemplate="%{text}<br>보급률: %{x}%<br>R값: %{y}<extra></extra>",
+    ))
+fig3.update_layout(**base_layout("보급률 vs R값 관계"),
+                   xaxis_title="보급률 (%)",
+                   yaxis_title="R값")
+st.plotly_chart(fig3, use_container_width=True)
 
 # ─────────────────────────────────────────
 # 5. 정책 시뮬레이션
@@ -243,22 +243,25 @@ reduction = st.slider("치명률 감소율 적용 (%)", 0, 50, 20, format="%d%%"
 sim_df = filtered_df.copy()
 sim_df["예상 치명률"] = sim_df["치명률"] * (1 - reduction / 100)
 
-fig4, ax4 = plt.subplots(figsize=(9, 4))
-x = range(len(sim_df))
-width = 0.35
-
-ax4.bar([i - width / 2 for i in x], sim_df["치명률"],
-        width=width, color=ACCENT, label="현재 치명률", edgecolor="none")
-ax4.bar([i + width / 2 for i in x], sim_df["예상 치명률"],
-        width=width, color=ACCENT3, label=f"정책 적용 후 (−{reduction}%)", edgecolor="none")
-
-ax4.set_xticks(list(x))
-ax4.set_xticklabels(sim_df["지역"].tolist())
-ax4.set_ylabel("치명률 (%)")
-ax4.legend(framealpha=0.9, fontsize=9)
-apply_style(fig4, ax4, "정책 적용 전/후 치명률 비교")
-fig4.tight_layout()
-st.pyplot(fig4)
+fig4 = go.Figure()
+fig4.add_trace(go.Bar(
+    name="현재 치명률",
+    x=sim_df["지역"],
+    y=sim_df["치명률"],
+    marker_color=ACCENT,
+    hovertemplate="%{x} 현재: %{y:.2f}%<extra></extra>",
+))
+fig4.add_trace(go.Bar(
+    name=f"정책 적용 후 (−{reduction}%)",
+    x=sim_df["지역"],
+    y=sim_df["예상 치명률"],
+    marker_color=ACCENT3,
+    hovertemplate="%{x} 예상: %{y:.2f}%<extra></extra>",
+))
+fig4.update_layout(**base_layout("정책 적용 전/후 치명률 비교"),
+                   barmode="group",
+                   yaxis_title="치명률 (%)")
+st.plotly_chart(fig4, use_container_width=True)
 
 # ─────────────────────────────────────────
 # 6. 정책 전략
