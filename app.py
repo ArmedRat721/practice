@@ -4,62 +4,52 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+import platform
 
-font_path = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
-fontprop = fm.FontProperties(fname=font_path)
+# -----------------------------
+# 한글 폰트 설정
+# -----------------------------
+if platform.system() == 'Windows':
+    plt.rc('font', family='Malgun Gothic')  # 윈도우
+elif platform.system() == 'Darwin':
+    plt.rc('font', family='AppleGothic')    # 맥
+else:
+    plt.rc('font', family='NanumGothic')    # 리눅스 (streamlit cloud 등)
 
+plt.rcParams['axes.unicode_minus'] = False  # 마이너스 깨짐 방지
+
+# -----------------------------
+# 기본 설정
+# -----------------------------
 st.set_page_config(page_title="AIV 생명 보호 실드", layout="wide")
-
 st.title("🛡️ AIV 생명 보호 실드 대시보드")
 
 # -----------------------------
-# 데이터 로드 (업로드 or 기본 데이터)
+# 데이터
 # -----------------------------
-uploaded_file = st.file_uploader("📂 CSV 파일 업로드", type=["csv"])
+data = {
+    "지역": ["서울", "경기", "인천", "강원", "전북", "경북", "전남"],
+    "확진자": [98503, 63552, 37195, 7787, 9606, 11174, 6202],
+    "사망자": [4196, 3787, 2183, 858, 950, 1063, 581],
+    "치명률": [4.26, 5.96, 5.87, 11.02, 9.89, 9.52, 9.37],
+    "유형": ["도시", "도시", "도시", "지방", "지방", "지방", "지방"],
+    "보급률": [95, 93, 91, 78, 76, 79, 74],
+    "R값": [3.8, 3.5, 3.4, 1.9, 2.0, 2.1, 1.7]
+}
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-else:
-    data = {
-        "지역": ["서울", "경기", "인천", "강원", "전북", "경북", "전남"],
-        "확진자": [98503, 63552, 37195, 7787, 9606, 11174, 6202],
-        "사망자": [4196, 3787, 2183, 858, 950, 1063, 581],
-        "치명률": [4.26, 5.96, 5.87, 11.02, 9.89, 9.52, 9.37],
-        "유형": ["도시", "도시", "도시", "지방", "지방", "지방", "지방"],
-        "보급률": [95, 93, 91, 78, 76, 79, 74],
-        "R값": [3.8, 3.5, 3.4, 1.9, 2.0, 2.1, 1.7]
-    }
-    df = pd.DataFrame(data)
+df = pd.DataFrame(data)
 
 # -----------------------------
-# KPI
-# -----------------------------
-st.subheader("📊 핵심 지표")
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("총 확진자", f"{df['확진자'].sum():,}")
-col2.metric("총 사망자", f"{df['사망자'].sum():,}")
-col3.metric("평균 치명률", f"{df['치명률'].mean():.2f}%")
-
-# -----------------------------
-# 필터
-# -----------------------------
-st.sidebar.header("🔎 필터")
-region_type = st.sidebar.multiselect("지역 유형 선택", df["유형"].unique(), default=df["유형"].unique())
-
-filtered_df = df[df["유형"].isin(region_type)]
-
-# -----------------------------
-# 지역별 치명률
+# 그래프 예시
 # -----------------------------
 st.subheader("📍 지역별 치명률")
 
-fig1, ax1 = plt.subplots()
-ax1.bar(filtered_df["지역"], filtered_df["치명률"])
-ax1.set_ylabel("치명률 (%)")
-ax1.set_title("지역별 치명률")
-st.pyplot(fig1)
+fig, ax = plt.subplots()
+ax.bar(df["지역"], df["치명률"])
+ax.set_title("지역별 치명률")
+ax.set_ylabel("치명률 (%)")
+
+st.pyplot(fig)
 
 # -----------------------------
 # 도시 vs 지방
