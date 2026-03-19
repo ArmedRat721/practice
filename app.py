@@ -3,7 +3,10 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 
+font_path = "./NanumGothic.ttf"  # 같은 폴더에 폰트 넣는 게 베스트
+fontprop = fm.FontProperties(fname=font_path)
 st.set_page_config(page_title="AIV 생명 보호 실드", layout="wide")
 
 st.title("🛡️ AIV 생명 보호 실드 대시보드")
