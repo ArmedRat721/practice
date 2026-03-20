@@ -1,287 +1,260 @@
-# app.py
-# Plotly + Google Fonts(Noto Sans KR) → 한글 깨짐 완전 해결
-
-import streamlit as st
+import os
+import re
+import json
+import chardet
 import pandas as pd
-import plotly.graph_objects as go
+from flask import Flask, jsonify, request, render_template, abort
+from werkzeug.utils import secure_filename
 
-# ─────────────────────────────────────────
-# 페이지 설정
-# ─────────────────────────────────────────
-st.set_page_config(
-    page_title="AIV 생명 보호 실드",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+app = Flask(__name__)
 
-# ─────────────────────────────────────────
-# Google Fonts + CSS 주입
-# Noto Sans KR을 웹폰트로 직접 로드 → 서버 폰트 무관
-# ─────────────────────────────────────────
-st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;800&display=swap" rel="stylesheet">
+DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-<style>
-    /* 전체 앱 폰트 */
-    html, body, [class*="css"] {
-        font-family: 'Noto Sans KR', sans-serif !important;
-    }
+# Preset CSV file paths (from Downloads)
+PRESET_FILES = {
+    2019: os.path.join(DOWNLOADS, "로드킬데이터_사고잦은구간(2019년상반기).csv"),
+    2020: os.path.join(DOWNLOADS, "한국도로공사_로드킬 데이터 정보_20200630_수정.csv"),
+    2021: os.path.join(DOWNLOADS, "로드킬데이터_사고잦은구간(2021).csv"),
+    2022: os.path.join(DOWNLOADS, "로드킬 데이터 정보(2022년6월).csv"),
+    2023: os.path.join(DOWNLOADS, "로드킬 데이터 정보(2023).csv"),
+    2025: os.path.join(DOWNLOADS, "한국도로공사_로드킬 데이터 정보_20250501.csv"),
+}
 
-    .stApp { background-color: #f8fafc; }
+# In-memory store: year (int) -> list of records
+all_data: dict[int, list[dict]] = {}
 
-    [data-testid="stSidebar"] {
-        background: #ffffff;
-        border-right: 1px solid #e2e8f0;
-    }
 
-    .main-title {
-        font-family: 'Noto Sans KR', sans-serif;
-        font-size: 2rem;
-        font-weight: 800;
-        color: #1e293b;
-        letter-spacing: -0.5px;
-        margin-bottom: 0.2rem;
-    }
-    .sub-title {
-        font-family: 'Noto Sans KR', sans-serif;
-        font-size: 0.95rem;
-        color: #64748b;
-        margin-bottom: 1.8rem;
-    }
-    .section-header {
-        font-family: 'Noto Sans KR', sans-serif;
-        font-size: 1.05rem;
-        font-weight: 700;
-        color: #1e293b;
-        border-left: 4px solid #3b82f6;
-        padding-left: 10px;
-        margin: 1.8rem 0 1rem 0;
-    }
+def detect_encoding(path: str) -> str:
+    with open(path, "rb") as f:
+        raw = f.read(32768)
+    result = chardet.detect(raw)
+    enc = result.get("encoding") or "cp949"
+    if enc.lower() in ("ascii", "windows-1252"):
+        enc = "cp949"
+    return enc
 
-    [data-testid="metric-container"] {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 1rem 1.2rem;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-    [data-testid="metric-container"] label {
-        color: #64748b !important;
-        font-size: 0.85rem !important;
-    }
-    [data-testid="metric-container"] [data-testid="stMetricValue"] {
-        color: #1e293b !important;
-        font-size: 1.7rem !important;
-        font-weight: 800 !important;
-    }
 
-    .stTabs [aria-selected="true"] {
-        color: #3b82f6 !important;
-        border-bottom-color: #3b82f6 !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize column names across different CSV formats."""
+    df.columns = [str(c).strip().replace(" ", "") for c in df.columns]
 
-# ─────────────────────────────────────────
-# Plotly 공통 폰트·레이아웃
-# "Noto Sans KR"을 직접 지정
-# ─────────────────────────────────────────
-KR_FONT = "Noto Sans KR"
-ACCENT  = "#3b82f6"
-ACCENT2 = "#10b981"
-ACCENT3 = "#f59e0b"
-TEXT    = "#1e293b"
-GRID    = "#e2e8f0"
+    col_map = {}
+    for c in df.columns:
+        if any(k in c for k in ("본부명", "도로본부")):
+            col_map[c] = "region"
+        elif "지사명" in c or "지사" in c:
+            col_map[c] = "branch"
+        elif "노선명" in c:
+            col_map[c] = "route"
+        elif "구간" in c:
+            col_map[c] = "section"
+        elif "방향" in c:
+            col_map[c] = "direction"
+        elif "5km" in c.lower() or "시점" in c:
+            col_map[c] = "km_start"
+        elif "발생건수" in c or "건수" in c:
+            col_map[c] = "count"
+        elif "위도" in c:
+            col_map[c] = "lat"
+        elif "경도" in c:
+            col_map[c] = "lng"
+    return df.rename(columns=col_map)
 
-def base_layout(title=""):
-    return dict(
-        title=dict(text=title, font=dict(family=KR_FONT, size=15, color=TEXT), x=0.02),
-        font=dict(family=KR_FONT, size=12, color=TEXT),
-        paper_bgcolor="#ffffff",
-        plot_bgcolor="#ffffff",
-        margin=dict(l=50, r=20, t=55, b=45),
-        xaxis=dict(showgrid=False, linecolor=GRID, tickfont=dict(family=KR_FONT, size=12)),
-        yaxis=dict(gridcolor=GRID, gridwidth=1, linecolor=GRID, tickfont=dict(family=KR_FONT, size=12)),
-        legend=dict(font=dict(family=KR_FONT, size=12), bgcolor="rgba(255,255,255,0.9)",
-                    bordercolor=GRID, borderwidth=1),
-        hoverlabel=dict(font=dict(family=KR_FONT)),
-    )
 
-# ─────────────────────────────────────────
-# 타이틀
-# ─────────────────────────────────────────
-st.markdown('<div class="main-title">🛡️ AIV 생명 보호 실드 대시보드</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">감염병 대응 현황 및 정책 효과 시뮬레이션</div>', unsafe_allow_html=True)
+def load_csv(path: str, year: int) -> list[dict]:
+    enc = detect_encoding(path)
+    try:
+        df = pd.read_csv(path, encoding=enc)
+    except Exception:
+        df = pd.read_csv(path, encoding="cp949")
 
-# ─────────────────────────────────────────
-# 데이터 로드
-# ─────────────────────────────────────────
-uploaded_file = st.file_uploader("📂 CSV 파일 업로드 (없으면 기본 데이터 사용)", type=["csv"])
+    df = normalize_df(df)
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-else:
-    data = {
-        "지역":   ["서울", "경기", "인천", "강원", "전북", "경북", "전남"],
-        "확진자": [98503, 63552, 37195, 7787,  9606,  11174, 6202],
-        "사망자": [4196,  3787,  2183,  858,   950,   1063,  581],
-        "치명률": [4.26,  5.96,  5.87,  11.02, 9.89,  9.52,  9.37],
-        "유형":   ["도시", "도시", "도시", "지방", "지방", "지방", "지방"],
-        "보급률": [95, 93, 91, 78, 76, 79, 74],
-        "R값":    [3.8, 3.5, 3.4, 1.9, 2.0, 2.1, 1.7],
-    }
-    df = pd.DataFrame(data)
+    required = ["region", "route", "section", "direction", "count", "lat", "lng"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"컬럼 인식 실패: {missing} | 인식된 컬럼: {list(df.columns)}")
 
-# ─────────────────────────────────────────
-# 사이드바
-# ─────────────────────────────────────────
-with st.sidebar:
-    st.markdown("## 🔎 필터 설정")
-    st.markdown("---")
-    region_type = st.multiselect(
-        "지역 유형 선택",
-        df["유형"].unique(),
-        default=df["유형"].unique(),
-    )
-    st.markdown("---")
-    st.caption("AIV 생명 보호 실드 정책 보고서\n데이터 기반 대시보드 v1.0")
+    df["year"] = year
+    df["count"] = pd.to_numeric(df["count"], errors="coerce").fillna(0).astype(int)
+    df["lat"]   = pd.to_numeric(df["lat"], errors="coerce")
+    df["lng"]   = pd.to_numeric(df["lng"], errors="coerce")
+    df["km_start"] = pd.to_numeric(
+        df.get("km_start", pd.Series(dtype=float)), errors="coerce"
+    ).fillna(0).astype(int)
 
-filtered_df = df[df["유형"].isin(region_type)]
+    # Keep only valid Korean coordinates
+    df = df[
+        (df["lat"] >= 33) & (df["lat"] <= 38.5) &
+        (df["lng"] >= 124) & (df["lng"] <= 130.5)
+    ].dropna(subset=["lat", "lng"])
 
-# ─────────────────────────────────────────
-# 1. 핵심 지표 (KPI)
-# ─────────────────────────────────────────
-st.markdown('<div class="section-header">📊 핵심 지표</div>', unsafe_allow_html=True)
+    for col in ("region", "branch", "route", "section", "direction"):
+        if col in df.columns:
+            df[col] = df[col].fillna("").astype(str).str.strip()
+        else:
+            df[col] = ""
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("총 확진자",   f"{filtered_df['확진자'].sum():,}명")
-c2.metric("총 사망자",   f"{filtered_df['사망자'].sum():,}명")
-c3.metric("평균 치명률", f"{filtered_df['치명률'].mean():.2f}%")
-c4.metric("평균 R값",    f"{filtered_df['R값'].mean():.2f}")
+    keep = ["year", "region", "branch", "route", "section", "direction",
+            "km_start", "count", "lat", "lng"]
+    return df[keep].to_dict("records")
 
-# ─────────────────────────────────────────
-# 2. 데이터 테이블
-# ─────────────────────────────────────────
-st.markdown('<div class="section-header">📋 데이터</div>', unsafe_allow_html=True)
-st.dataframe(filtered_df, use_container_width=True, height=260)
 
-# ─────────────────────────────────────────
-# 3. 지역별 분석 차트
-# ─────────────────────────────────────────
-st.markdown('<div class="section-header">📍 지역별 분석</div>', unsafe_allow_html=True)
+# ── Initial data load ──────────────────────────────────────────────────────
 
-col_a, col_b = st.columns(2)
+def load_all():
+    for year, path in PRESET_FILES.items():
+        if os.path.exists(path):
+            try:
+                all_data[year] = load_csv(path, year)
+                print(f"[OK] {year}: {len(all_data[year])}건 로드")
+            except Exception as e:
+                print(f"[ERR] {year} ({path}): {e}")
+        else:
+            print(f"[SKIP] {year}: 파일 없음 → {path}")
 
-with col_a:
-    colors = [ACCENT if t == "도시" else ACCENT2 for t in filtered_df["유형"]]
-    fig1 = go.Figure()
-    fig1.add_trace(go.Bar(
-        x=filtered_df["지역"],
-        y=filtered_df["치명률"],
-        marker_color=colors,
-        text=[f"{v:.1f}%" for v in filtered_df["치명률"]],
-        textposition="outside",
-        textfont=dict(family=KR_FONT, size=11, color=TEXT),
-        hovertemplate="%{x}: %{y:.2f}%<extra></extra>",
-    ))
-    fig1.update_layout(**base_layout("지역별 치명률"),
-                       yaxis_title="치명률 (%)",
-                       showlegend=False)
-    st.plotly_chart(fig1, use_container_width=True)
+    for fname in sorted(os.listdir(UPLOAD_FOLDER)):
+        if not fname.lower().endswith(".csv"):
+            continue
+        m = re.search(r"(\d{4})", fname)
+        if not m:
+            continue
+        year = int(m.group(1))
+        if year in all_data:
+            continue
+        try:
+            all_data[year] = load_csv(os.path.join(UPLOAD_FOLDER, fname), year)
+            print(f"[OK] {year} (업로드): {len(all_data[year])}건 로드")
+        except Exception as e:
+            print(f"[ERR] 업로드 파일 {fname}: {e}")
 
-with col_b:
-    grouped = filtered_df.groupby("유형")["치명률"].mean().reset_index()
-    bar_colors = [ACCENT if t == "도시" else ACCENT2 for t in grouped["유형"]]
-    fig2 = go.Figure()
-    fig2.add_trace(go.Bar(
-        x=grouped["유형"],
-        y=grouped["치명률"],
-        marker_color=bar_colors,
-        text=[f"{v:.2f}%" for v in grouped["치명률"]],
-        textposition="outside",
-        textfont=dict(family=KR_FONT, size=12, color=TEXT),
-        hovertemplate="%{x}: %{y:.2f}%<extra></extra>",
-        width=0.4,
-    ))
-    fig2.update_layout(**base_layout("도시 vs 지방 평균 치명률"),
-                       yaxis_title="평균 치명률 (%)",
-                       showlegend=False)
-    st.plotly_chart(fig2, use_container_width=True)
+load_all()
 
-# ─────────────────────────────────────────
-# 4. 산점도
-# ─────────────────────────────────────────
-st.markdown('<div class="section-header">📡 보급률 vs 감염재생산지수(R)</div>', unsafe_allow_html=True)
 
-fig3 = go.Figure()
-for utype, color in [("도시", ACCENT), ("지방", ACCENT2)]:
-    sub = filtered_df[filtered_df["유형"] == utype]
-    fig3.add_trace(go.Scatter(
-        x=sub["보급률"],
-        y=sub["R값"],
-        mode="markers+text",
-        name=utype,
-        marker=dict(color=color, size=14, line=dict(color="white", width=1.5)),
-        text=sub["지역"],
-        textposition="top right",
-        textfont=dict(family=KR_FONT, size=12, color=TEXT),
-        hovertemplate="%{text}<br>보급률: %{x}%<br>R값: %{y}<extra></extra>",
-    ))
-fig3.update_layout(**base_layout("보급률 vs R값 관계"),
-                   xaxis_title="보급률 (%)",
-                   yaxis_title="R값")
-st.plotly_chart(fig3, use_container_width=True)
+# ── API routes ─────────────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────
-# 5. 정책 시뮬레이션
-# ─────────────────────────────────────────
-st.markdown('<div class="section-header">🧪 정책 효과 시뮬레이션</div>', unsafe_allow_html=True)
+@app.route("/api/years")
+def api_years():
+    return jsonify(sorted(all_data.keys()))
 
-reduction = st.slider("치명률 감소율 적용 (%)", 0, 50, 20, format="%d%%")
 
-sim_df = filtered_df.copy()
-sim_df["예상 치명률"] = sim_df["치명률"] * (1 - reduction / 100)
+@app.route("/api/data")
+def api_data():
+    year = request.args.get("year", type=int)
+    if year is not None:
+        return jsonify(all_data.get(year, []))
+    combined = [r for records in all_data.values() for r in records]
+    return jsonify(combined)
 
-fig4 = go.Figure()
-fig4.add_trace(go.Bar(
-    name="현재 치명률",
-    x=sim_df["지역"],
-    y=sim_df["치명률"],
-    marker_color=ACCENT,
-    hovertemplate="%{x} 현재: %{y:.2f}%<extra></extra>",
-))
-fig4.add_trace(go.Bar(
-    name=f"정책 적용 후 (−{reduction}%)",
-    x=sim_df["지역"],
-    y=sim_df["예상 치명률"],
-    marker_color=ACCENT3,
-    hovertemplate="%{x} 예상: %{y:.2f}%<extra></extra>",
-))
-fig4.update_layout(**base_layout("정책 적용 전/후 치명률 비교"),
-                   barmode="group",
-                   yaxis_title="치명률 (%)")
-st.plotly_chart(fig4, use_container_width=True)
 
-# ─────────────────────────────────────────
-# 6. 정책 전략
-# ─────────────────────────────────────────
-st.markdown('<div class="section-header">🧠 정책 전략</div>', unsafe_allow_html=True)
+@app.route("/api/stats")
+def api_stats():
+    stats = {}
+    year_totals = {y: sum(r["count"] for r in recs) for y, recs in all_data.items()}
 
-tab1, tab2 = st.tabs(["🚑 전략 1 — 모바일 ICU", "👴 전략 2 — 고위험군 보호"])
+    for year, records in all_data.items():
+        if not records:
+            continue
+        counts = [r["count"] for r in records]
+        total  = sum(counts)
 
-with tab1:
-    st.markdown("""
-    #### 🚑 모바일 ICU 운영
-    - **의료 접근 시간 단축**: 골든타임 내 현장 대응
-    - **중증 환자 현장 치료**: 이송 부담 최소화
-    - **지방 치명률 감소 핵심 전략**: 의료 공백 지역 집중 배치
-    """)
+        route_counts: dict[str, int] = {}
+        for r in records:
+            route_counts[r["route"]] = route_counts.get(r["route"], 0) + r["count"]
 
-with tab2:
-    st.markdown("""
-    #### 👴 고위험군 집중 보호
-    - **65세 이상 집중 관리**: 맞춤형 모니터링 체계
-    - **6시간 내 항바이러스제 투약**: 신속 처방 프로토콜
-    - **방문 검진 + 24시간 핫라인**: 능동적 건강 관리 지원
-    """)
+        region_counts: dict[str, int] = {}
+        for r in records:
+            region_counts[r["region"]] = region_counts.get(r["region"], 0) + r["count"]
+
+        top_route = max(route_counts, key=route_counts.get) if route_counts else ""
+
+        prev_year = max((y for y in year_totals if y < year), default=None)
+        yoy = None
+        if prev_year and year_totals[prev_year] > 0:
+            yoy = round((total - year_totals[prev_year]) / year_totals[prev_year] * 100, 1)
+
+        stats[year] = {
+            "total": total,
+            "avg": round(total / len(records), 2),
+            "max_single": max(counts),
+            "top_route": top_route,
+            "record_count": len(records),
+            "region_counts": region_counts,
+            "route_counts": route_counts,
+            "yoy": yoy,
+        }
+    return jsonify(stats)
+
+
+@app.route("/api/matrix")
+def api_matrix():
+    years  = sorted(all_data.keys())
+    matrix: dict[str, dict[int, int]] = {}
+    for year, records in all_data.items():
+        for r in records:
+            route = r["route"]
+            if route not in matrix:
+                matrix[route] = {}
+            matrix[route][year] = matrix[route].get(year, 0) + r["count"]
+
+    totals = {route: sum(matrix[route].values()) for route in matrix}
+    sorted_routes = sorted(totals, key=totals.get, reverse=True)
+
+    rows = []
+    for route in sorted_routes:
+        row = {"route": route, "total": totals[route]}
+        for y in years:
+            row[str(y)] = matrix[route].get(y, None)
+        rows.append(row)
+    return jsonify({"years": years, "rows": rows})
+
+
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 없습니다"}), 400
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"error": "파일명이 없습니다"}), 400
+
+    year_str = request.form.get("year", "").strip()
+    if not year_str:
+        m = re.search(r"(\d{4})", f.filename)
+        year_str = m.group(1) if m else ""
+    if not year_str or not year_str.isdigit():
+        return jsonify({"error": "연도를 입력해주세요"}), 400
+
+    year      = int(year_str)
+    save_path = os.path.join(UPLOAD_FOLDER, f"{year}_roadkill.csv")
+    f.save(save_path)
+
+    try:
+        records = load_csv(save_path, year)
+        all_data[year] = records
+        return jsonify({"success": True, "year": year, "count": len(records)})
+    except Exception as e:
+        if os.path.exists(save_path):
+            os.remove(save_path)
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/year/<int:year>", methods=["DELETE"])
+def api_delete_year(year: int):
+    if year not in all_data:
+        return jsonify({"error": "해당 연도 데이터가 없습니다"}), 404
+    del all_data[year]
+    save_path = os.path.join(UPLOAD_FOLDER, f"{year}_roadkill.csv")
+    if os.path.exists(save_path):
+        os.remove(save_path)
+    return jsonify({"success": True, "year": year})
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
