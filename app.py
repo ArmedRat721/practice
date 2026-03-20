@@ -175,7 +175,7 @@ def make_map(df: pd.DataFrame):
     )
 
 def _metric_yoy(col, label: str, value: str, delta_str=None):
-    """'작년대비' 라벨을 delta 위에 표시하는 커스텀 KPI 카드."""
+    """'작년대비' 라벨을 delta 위에 표시하는 커스텀 KPI 카드 (흰 배경, 검은 텍스트)."""
     if delta_str is None:
         col.metric(label, value)
         return
@@ -184,11 +184,11 @@ def _metric_yoy(col, label: str, value: str, delta_str=None):
     arrow  = "▲" if is_up else "▼"
     num    = delta_str[1:] if delta_str[0] in ("+", "-") else delta_str
     col.markdown(f"""
-<div style="padding:6px 0 10px">
-  <p style="color:#8892a4;font-size:0.85rem;margin:0 0 4px 0">{label}</p>
-  <p style="color:white;font-size:2.1rem;font-weight:700;margin:0 0 8px 0;line-height:1">{value}</p>
-  <p style="color:#8892a4;font-size:0.72rem;margin:0 0 2px 0">작년대비</p>
-  <p style="color:{color};font-size:0.88rem;margin:0">{arrow} {num}</p>
+<div style="background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb">
+  <p style="color:#555;font-size:0.82rem;margin:0 0 6px 0;font-weight:500">{label}</p>
+  <p style="color:#111;font-size:2.1rem;font-weight:700;margin:0 0 10px 0;line-height:1">{value}</p>
+  <p style="color:#888;font-size:0.70rem;margin:0 0 2px 0">작년대비</p>
+  <p style="color:{color};font-size:0.88rem;margin:0;font-weight:600">{arrow} {num}</p>
 </div>""", unsafe_allow_html=True)
 
 def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
@@ -401,6 +401,19 @@ with tab1:
                 .format("{:.0f}")
             )
             st.dataframe(styled, use_container_width=True, height=460)
+            st.markdown("""
+<div style="font-size:0.78rem;color:#8892a4;margin-top:6px;line-height:1.8">
+  <b>색상 기준</b> &nbsp;|&nbsp;
+  <b>연도별 컬럼:</b>&nbsp;
+  <span style="background:#4575b4;color:white;padding:1px 6px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
+  <span style="background:#fee090;color:#333;padding:1px 6px;border-radius:3px">■ 중간</span>&nbsp;→&nbsp;
+  <span style="background:#d73027;color:white;padding:1px 6px;border-radius:3px">■ 높음</span>
+  &emsp;
+  <b>합계 컬럼:</b>&nbsp;
+  <span style="background:#deebf7;color:#333;padding:1px 6px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
+  <span style="background:#08519c;color:white;padding:1px 6px;border-radius:3px">■ 높음</span>
+  &emsp; (노선별 누적 발생건수 기준)
+</div>""", unsafe_allow_html=True)
         else:
             st.info("연도 데이터가 2개 이상이면 매트릭스가 표시됩니다.")
 
@@ -434,20 +447,24 @@ with tab2:
         kpi_row(yr_df, prev_df)
         st.divider()
 
-        # 지도 — 상행선 / 하행선 분리
+        # 지도 — 상행선(서울방향) / 하행선(지방방향) 분리
+        # 상행선: 서울 방향 (direction에 "상" 포함)
+        # 하행선: 지방 방향 (direction에 "하" 포함)
         st.subheader("📍 지점 지도")
         map_up = yr_df[yr_df["direction"].str.contains("상", na=False)]
         map_dn = yr_df[yr_df["direction"].str.contains("하", na=False)]
         col_up, col_dn = st.columns(2)
         with col_up:
-            st.markdown("**⬆ 상행선**")
+            st.markdown("**상행선** &nbsp;<span style='color:#4f8ef7;font-size:0.85rem'>(서울방향)</span>",
+                        unsafe_allow_html=True)
             deck_up = make_map(map_up)
             if deck_up:
                 st.pydeck_chart(deck_up, use_container_width=True, key="tab2_map_up")
             else:
                 st.info("상행선 데이터가 없습니다.")
         with col_dn:
-            st.markdown("**⬇ 하행선**")
+            st.markdown("**하행선** &nbsp;<span style='color:#f97316;font-size:0.85rem'>(지방방향)</span>",
+                        unsafe_allow_html=True)
             deck_dn = make_map(map_dn)
             if deck_dn:
                 st.pydeck_chart(deck_dn, use_container_width=True, key="tab2_map_dn")
