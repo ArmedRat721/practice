@@ -174,6 +174,67 @@ def make_map(df: pd.DataFrame):
         tooltip={"text": "{tooltip}"},
     )
 
+def _risk_color(norm: float):
+    """norm 0~1 → [R,G,B,A]. 낮음=노랑, 중간=주황, 높음=빨강."""
+    if norm > 0.6:
+        return [239, 68,  68,  230]   # 빨강
+    elif norm > 0.3:
+        return [249, 115, 22,  230]   # 주황
+    else:
+        return [234, 179, 8,   230]   # 노랑
+
+def make_map_lines(df: pd.DataFrame):
+    """구간을 선(LineLayer)으로 표시. 낮음=노랑, 중간=주황, 높음=빨강.
+    같은 노선·방향의 인접 지점을 km_start 순으로 연결.
+    단일 지점만 있을 경우 점(ScatterplotLayer)으로 대체."""
+    need = ["lat","lng","count","route","section","direction","km_start"]
+    mdf  = df[[c for c in need if c in df.columns]].dropna(subset=["lat","lng"]).copy()
+    if mdf.empty:
+        return None
+
+    max_c    = mdf["count"].max() or 1
+    segments = []
+
+    for (route, direction), grp in mdf.groupby(["route", "direction"]):
+        grp_s = grp.sort_values("km_start").reset_index(drop=True)
+        rows  = grp_s.to_dict("records")
+
+        for i in range(len(rows) - 1):
+            r0, r1  = rows[i], rows[i + 1]
+            avg_cnt = (r0["count"] + r1["count"]) / 2
+            col     = _risk_color(avg_cnt / max_c)
+            segments.append({
+                "start":   [r0["lng"], r0["lat"]],
+                "end":     [r1["lng"], r1["lat"]],
+                "r": col[0], "g": col[1], "b": col[2], "a": col[3],
+                "tooltip": (
+                    f"{route}  {r0['section']} → {r1['section']}\n"
+                    f"방향: {direction} | 평균 {int(avg_cnt)}건"
+                ),
+            })
+
+    # 인접 구간이 없으면(단일 점만 존재) ScatterplotLayer 로 대체
+    if not segments:
+        return make_map(df)
+
+    seg_df = pd.DataFrame(segments)
+    layer  = pdk.Layer(
+        "LineLayer", seg_df,
+        get_source_position="start",
+        get_target_position="end",
+        get_color=["r", "g", "b", "a"],
+        get_width=6,
+        width_min_pixels=3,
+        pickable=True,
+    )
+    return pdk.Deck(
+        layers=[layer],
+        initial_view_state=pdk.ViewState(
+            latitude=36.5, longitude=127.8, zoom=6.3, pitch=0),
+        map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+        tooltip={"text": "{tooltip}"},
+    )
+
 def _metric_yoy(col, label: str, value: str, delta_str=None):
     """'작년대비' 라벨을 delta 위에 표시하는 커스텀 KPI 카드 (흰 배경, 검은 텍스트)."""
     if delta_str is None:
@@ -457,7 +518,7 @@ with tab2:
         with col_up:
             st.markdown("**상행선** &nbsp;<span style='color:#4f8ef7;font-size:0.85rem'>(서울방향)</span>",
                         unsafe_allow_html=True)
-            deck_up = make_map(map_up)
+            deck_up = make_map_lines(map_up)
             if deck_up:
                 st.pydeck_chart(deck_up, use_container_width=True, key="tab2_map_up")
             else:
@@ -465,11 +526,19 @@ with tab2:
         with col_dn:
             st.markdown("**하행선** &nbsp;<span style='color:#f97316;font-size:0.85rem'>(지방방향)</span>",
                         unsafe_allow_html=True)
-            deck_dn = make_map(map_dn)
+            deck_dn = make_map_lines(map_dn)
             if deck_dn:
                 st.pydeck_chart(deck_dn, use_container_width=True, key="tab2_map_dn")
             else:
                 st.info("하행선 데이터가 없습니다.")
+        st.markdown("""
+<div style="font-size:0.78rem;color:#8892a4;margin-top:4px">
+  <b>선 색상 기준</b> &nbsp;|&nbsp;
+  <span style="background:#eab308;color:#111;padding:1px 8px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
+  <span style="background:#f97316;color:white;padding:1px 8px;border-radius:3px">■ 중간</span>&nbsp;→&nbsp;
+  <span style="background:#ef4444;color:white;padding:1px 8px;border-radius:3px">■ 높음</span>
+  &nbsp;(인접 구간 평균 발생건수 기준 · 같은 노선·방향 순서로 연결)
+</div>""", unsafe_allow_html=True)
 
         # 노선 차트
         st.subheader("🛣️ 노선별 발생건수 (상위 15)")
