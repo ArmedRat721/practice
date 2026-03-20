@@ -369,24 +369,42 @@ def make_map_lines(df: pd.DataFrame, min_count: int = -1, max_count: int = 0):
         tooltip={"text": "{tooltip}"},
     )
 
-def _metric_yoy(col, label: str, value: str, delta_str=None):
-    """'작년대비' 라벨을 delta 위에 표시하는 커스텀 KPI 카드 (흰 배경, 검은 텍스트)."""
-    if delta_str is None:
+def _delta_html(label: str, delta_str: str) -> str:
+    """작년대비/평균대비 한 줄 HTML 조각."""
+    is_up = delta_str.startswith("+")
+    color = "#ef4444" if is_up else "#22c55e"
+    arrow = "▲" if is_up else "▼"
+    num   = delta_str[1:] if delta_str[0] in ("+", "-") else delta_str
+    return (
+        f'<p style="color:#888;font-size:0.70rem;margin:6px 0 2px 0">{label}</p>'
+        f'<p style="color:{color};font-size:0.88rem;margin:0;font-weight:600">{arrow} {num}</p>'
+    )
+
+def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None):
+    """커스텀 KPI 카드. delta_str=작년대비, avg_delta_str=평균대비."""
+    if delta_str is None and avg_delta_str is None:
         col.metric(label, value)
         return
-    is_up  = delta_str.startswith("+")
-    color  = "#ef4444" if is_up else "#22c55e"
-    arrow  = "▲" if is_up else "▼"
-    num    = delta_str[1:] if delta_str[0] in ("+", "-") else delta_str
+    inner = ""
+    if delta_str is not None:
+        inner += _delta_html("작년대비", delta_str)
+    if avg_delta_str is not None:
+        inner += _delta_html("평균대비", avg_delta_str)
     col.markdown(f"""
 <div style="background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb">
   <p style="color:#555;font-size:0.82rem;margin:0 0 6px 0;font-weight:500">{label}</p>
-  <p style="color:#111;font-size:2.1rem;font-weight:700;margin:0 0 10px 0;line-height:1">{value}</p>
-  <p style="color:#888;font-size:0.70rem;margin:0 0 2px 0">작년대비</p>
-  <p style="color:{color};font-size:0.88rem;margin:0;font-weight:600">{arrow} {num}</p>
+  <p style="color:#111;font-size:2.1rem;font-weight:700;margin:0 0 4px 0;line-height:1">{value}</p>
+  {inner}
 </div>""", unsafe_allow_html=True)
 
-def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
+def _fmt_delta(diff, base, unit="건") -> str:
+    s = "+" if diff >= 0 else ""
+    pct = round(diff / base * 100, 1) if base else 0
+    if isinstance(diff, float):
+        return f"{s}{diff:.2f}{unit} ({s}{pct}%)"
+    return f"{s}{diff:,}{unit} ({s}{pct}%)"
+
+def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None, all_years_data: dict = None):
     """4개 KPI 카드 렌더링."""
     total = int(df["count"].sum())
     avg   = round(float(df["count"].mean()), 2)
@@ -394,26 +412,34 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
     rc    = df.groupby("route")["count"].sum()
     top_r = rc.idxmax() if not rc.empty else "—"
 
-    delta_total = None
-    delta_avg   = None
+    delta_total = delta_avg = None
     if prev_df is not None and not prev_df.empty:
         pt = int(prev_df["count"].sum())
         pa = round(float(prev_df["count"].mean()), 2)
         if pt > 0:
-            diff_t = total - pt
-            pct_t  = round(diff_t / pt * 100, 1)
-            s      = "+" if diff_t >= 0 else ""
-            delta_total = f"{s}{diff_t:,}건 ({s}{pct_t}%)"
+            delta_total = _fmt_delta(total - pt, pt)
         if pa > 0:
-            diff_a = round(avg - pa, 2)
-            pct_a  = round(diff_a / pa * 100, 1)
-            s2     = "+" if diff_a >= 0 else ""
-            delta_avg = f"{s2}{diff_a}건 ({s2}{pct_a}%)"
+            delta_avg = _fmt_delta(round(avg - pa, 2), pa)
+
+    avg_delta_total = avg_delta_avg = avg_delta_max = None
+    if all_years_data and len(all_years_data) > 1:
+        yr_totals = [int(d["count"].sum())          for d in all_years_data.values()]
+        yr_avgs   = [round(float(d["count"].mean()), 2) for d in all_years_data.values()]
+        yr_maxs   = [int(d["count"].max())           for d in all_years_data.values()]
+        mean_total = round(sum(yr_totals) / len(yr_totals), 2)
+        mean_avg   = round(sum(yr_avgs)   / len(yr_avgs),   2)
+        mean_max   = round(sum(yr_maxs)   / len(yr_maxs),   2)
+        if mean_total:
+            avg_delta_total = _fmt_delta(total - mean_total, mean_total)
+        if mean_avg:
+            avg_delta_avg = _fmt_delta(round(avg - mean_avg, 2), mean_avg)
+        if mean_max:
+            avg_delta_max = _fmt_delta(max_c - mean_max, mean_max)
 
     c1, c2, c3, c4 = st.columns(4)
-    _metric_yoy(c1, "총 발생건수",        f"{total:,}건", delta_total)
-    _metric_yoy(c2, "구간 평균 발생건수", f"{avg}건",     delta_avg)
-    c3.metric("최다 발생건",   f"{max_c:,}건")
+    _metric_yoy(c1, "총 발생건수",        f"{total:,}건", delta_total, avg_delta_total)
+    _metric_yoy(c2, "구간 평균 발생건수", f"{avg}건",     delta_avg,   avg_delta_avg)
+    _metric_yoy(c3, "최다 발생건",        f"{max_c:,}건", None,        avg_delta_max)
     c4.metric("최고위험 노선", top_r)
 
 def chart_route(df: pd.DataFrame):
@@ -569,7 +595,7 @@ with tab1:
         latest_df = all_data[latest_y]
         prev_df_l = all_data.get(prev_y)
         st.subheader(f"📌 최근 연도 ({latest_y}년) 집계")
-        kpi_row(latest_df, prev_df_l)
+        kpi_row(latest_df, prev_df_l, all_years_data=all_data)
         st.divider()
 
         # ── 연도 선택 필터 ──────────────────────────────────────────────────
@@ -702,7 +728,7 @@ with tab2:
 
         # KPI
         st.subheader(f"📌 {sel_year}년 집계")
-        kpi_row(yr_df, prev_df)
+        kpi_row(yr_df, prev_df, all_years_data=all_data)
         st.divider()
 
         # 노선 차트
