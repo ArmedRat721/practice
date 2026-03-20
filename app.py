@@ -293,39 +293,69 @@ def _risk_color(norm: float):
 
 def make_map_lines(df: pd.DataFrame, min_count: int = -1, max_count: int = 0):
     """구간을 점(ScatterplotLayer)으로 표시. 최솟값=초록, 중간=노랑, 최댓값=빨강.
-    min_count/max_count: 색상 정규화 기준 (0/-1이면 df 내 값 사용)"""
-    need = ["lat","lng","count","route","section","direction","dir_yn","km_start"]
+    - 지사+노선+구간 동일 & 건수 동일  → 점 1개, 툴팁에 양방향 표시
+    - 지사+노선+구간 동일 & 건수 다름  → 각각 살짝 어긋난 점으로 표시
+    """
+    need = ["lat","lng","count","route","section","direction","dir_yn","km_start","branch"]
     mdf  = df[[c for c in need if c in df.columns]].dropna(subset=["lat","lng"]).copy()
     if mdf.empty:
         return None
 
-    # dir_yn 기준으로 km_start 중복 행 합산
-    group_key = "dir_yn" if "dir_yn" in mdf.columns else "section"
-    agg_cols  = {"lat":"first","lng":"first","count":"sum","section":"first"}
-    if "direction" in mdf.columns:
-        agg_cols["direction"] = "first"
-    mdf = (
-        mdf.groupby(["route", group_key, "km_start"], as_index=False)
-           .agg(agg_cols)
-    )
+    # 방향 표시용 컬럼 결정
+    dir_col = "direction" if "direction" in mdf.columns else ("dir_yn" if "dir_yn" in mdf.columns else None)
 
-    min_c   = min_count if min_count >= 0 else int(mdf["count"].min())
-    max_c   = max_count if max_count > 0  else int(mdf["count"].max())
+    # 그룹 기준: 지사+노선+구간
+    grp_keys = [k for k in ["branch","route","section"] if k in mdf.columns]
+
+    OFFSET = 0.004   # ~400m 어긋남
+    result_rows = []
+
+    for _, grp in mdf.groupby(grp_keys, sort=False):
+        grp   = grp.reset_index(drop=True)
+        lat0  = float(grp["lat"].iloc[0])
+        lng0  = float(grp["lng"].iloc[0])
+        counts = grp["count"].tolist()
+        dirs   = grp[dir_col].astype(str).tolist() if dir_col else [""] * len(grp)
+
+        if len(grp) > 1 and len(set(counts)) == 1:
+            # 건수 동일 → 점 1개, 방향 병합
+            row = grp.iloc[0].copy()
+            row["lat"]          = lat0
+            row["lng"]          = lng0
+            row["_tooltip_dir"] = " / ".join(dirs)
+            result_rows.append(row)
+        else:
+            # 건수 다름 → 각각 위도 방향으로 어긋나게
+            n = len(grp)
+            for i, (_, r) in enumerate(grp.iterrows()):
+                r = r.copy()
+                offset = (i - (n - 1) / 2) * OFFSET
+                r["lat"]          = lat0 + offset
+                r["lng"]          = lng0
+                r["_tooltip_dir"] = dirs[i]
+                result_rows.append(r)
+
+    if not result_rows:
+        return None
+
+    result = pd.DataFrame(result_rows).reset_index(drop=True)
+
+    min_c   = min_count if min_count >= 0 else int(result["count"].min())
+    max_c   = max_count if max_count > 0  else int(result["count"].max())
     range_c = (max_c - min_c) or 1
-    mdf["norm"] = ((mdf["count"] - min_c) / range_c).clip(0, 1)
-    mdf["r"]       = mdf["norm"].apply(lambda n: _risk_color(n)[0])
-    mdf["g"]       = mdf["norm"].apply(lambda n: _risk_color(n)[1])
-    mdf["b"]       = mdf["norm"].apply(lambda n: _risk_color(n)[2])
-    mdf["a"]       = mdf["norm"].apply(lambda n: _risk_color(n)[3])
-    mdf["radius"]  = mdf["section"].apply(_section_radius)
-    dir_col = mdf["direction"].astype(str) if "direction" in mdf.columns else mdf["section"].astype(str)
-    mdf["tooltip"] = (
-        mdf["route"] + "  " + mdf["section"] + "\n"
-        + "방향: " + dir_col + " | " + mdf["count"].astype(str) + "건"
+    result["norm"]   = ((result["count"] - min_c) / range_c).clip(0, 1)
+    result["r"]      = result["norm"].apply(lambda n: _risk_color(n)[0])
+    result["g"]      = result["norm"].apply(lambda n: _risk_color(n)[1])
+    result["b"]      = result["norm"].apply(lambda n: _risk_color(n)[2])
+    result["a"]      = result["norm"].apply(lambda n: _risk_color(n)[3])
+    result["radius"] = result["section"].apply(_section_radius)
+    result["tooltip"] = (
+        result["route"] + "  " + result["section"] + "\n"
+        + "방향: " + result["_tooltip_dir"] + " | " + result["count"].astype(str) + "건"
     )
 
     layer = pdk.Layer(
-        "ScatterplotLayer", mdf,
+        "ScatterplotLayer", result,
         get_position=["lng", "lat"],
         get_color=["r", "g", "b", "a"],
         get_radius="radius",
