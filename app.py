@@ -307,33 +307,33 @@ def make_map_lines(df: pd.DataFrame, min_count: int = -1, max_count: int = 0):
     # 그룹 기준: 지사+노선+구간
     grp_keys = [k for k in ["branch","route","section"] if k in mdf.columns]
 
-    OFFSET = 0.004   # ~400m 어긋남
+    OFFSET = 0.008   # ~800m 어긋남
     result_rows = []
 
     for _, grp in mdf.groupby(grp_keys, sort=False):
-        grp   = grp.reset_index(drop=True)
-        lat0  = float(grp["lat"].iloc[0])
-        lng0  = float(grp["lng"].iloc[0])
+        grp    = grp.reset_index(drop=True)
+        lat0   = float(grp["lat"].iloc[0])
+        lng0   = float(grp["lng"].iloc[0])
         counts = grp["count"].tolist()
         dirs   = grp[dir_col].astype(str).tolist() if dir_col else [""] * len(grp)
 
         if len(grp) > 1 and len(set(counts)) == 1:
             # 건수 동일 → 점 1개, 방향 병합
-            row = grp.iloc[0].copy()
-            row["lat"]          = lat0
-            row["lng"]          = lng0
-            row["_tooltip_dir"] = " / ".join(dirs)
-            result_rows.append(row)
+            base = grp.iloc[0].to_dict()
+            base["lat"]          = lat0
+            base["lng"]          = lng0
+            base["_tooltip_dir"] = " / ".join(dirs)
+            result_rows.append(base)
         else:
-            # 건수 다름 → 각각 위도 방향으로 어긋나게
+            # 단일 행 or 건수 다름 → 각각 위도 방향으로 어긋나게
             n = len(grp)
-            for i, (_, r) in enumerate(grp.iterrows()):
-                r = r.copy()
+            for i in range(n):
+                base = grp.iloc[i].to_dict()
                 offset = (i - (n - 1) / 2) * OFFSET
-                r["lat"]          = lat0 + offset
-                r["lng"]          = lng0
-                r["_tooltip_dir"] = dirs[i]
-                result_rows.append(r)
+                base["lat"]          = lat0 + offset
+                base["lng"]          = lng0
+                base["_tooltip_dir"] = dirs[i]
+                result_rows.append(base)
 
     if not result_rows:
         return None
