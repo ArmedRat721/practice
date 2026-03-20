@@ -142,6 +142,26 @@ PALETTE = ["#4f8ef7","#7c5cfc","#22c55e","#f59e0b",
            "#ef4444","#06b6d4","#ec4899","#84cc16"]
 
 # ── 공통 함수 ──────────────────────────────────────────────────────────────────
+def classify_direction(route: str) -> str:
+    """노선명(route)에 포함된 방향 키워드로 상행선/하행선을 분류.
+
+    상행선 (서울·기점 방향):
+      - (상행): 명시적 상행 표기
+      - (북향): 북쪽 = 서울 방향
+      - (서향): 서쪽 = 서울 방향 (영동선 등)
+
+    하행선 (지방·종점 방향):
+      - (하행): 명시적 하행 표기
+      - (남향): 남쪽 = 지방 방향
+      - (동향): 동쪽 = 지방 방향 (영동선 등)
+    """
+    r = str(route)
+    if any(kw in r for kw in ("상행", "북향", "서향")):
+        return "상행선"
+    if any(kw in r for kw in ("하행", "남향", "동향")):
+        return "하행선"
+    return "기타"
+
 def make_map(df: pd.DataFrame):
     """PyDeck ScatterplotLayer 반환. 데이터 없으면 None."""
     mdf = df[["lat","lng","count","route","section","direction","year","region"]].dropna().copy()
@@ -508,24 +528,23 @@ with tab2:
         kpi_row(yr_df, prev_df)
         st.divider()
 
-        # 지도 — 상행선(서울방향) / 하행선(지방방향) 분리
-        # 상행선: 서울 방향 (direction에 "상" 포함)
-        # 하행선: 지방 방향 (direction에 "하" 포함)
+        # 지도 — 상행선 / 하행선 분리
+        # 노선명(route)의 방향 키워드로 분류: classify_direction() 참조
         st.subheader("📍 지점 지도")
-        map_up = yr_df[yr_df["direction"].str.contains("상", na=False)]
-        map_dn = yr_df[yr_df["direction"].str.contains("하", na=False)]
+        yr_df_dir = yr_df.copy()
+        yr_df_dir["dir_class"] = yr_df_dir["route"].apply(classify_direction)
+        map_up = yr_df_dir[yr_df_dir["dir_class"] == "상행선"]
+        map_dn = yr_df_dir[yr_df_dir["dir_class"] == "하행선"]
         col_up, col_dn = st.columns(2)
         with col_up:
-            st.markdown("**상행선** &nbsp;<span style='color:#4f8ef7;font-size:0.85rem'>(서울방향)</span>",
-                        unsafe_allow_html=True)
+            st.markdown("**상행선**")
             deck_up = make_map_lines(map_up)
             if deck_up:
                 st.pydeck_chart(deck_up, use_container_width=True, key="tab2_map_up")
             else:
                 st.info("상행선 데이터가 없습니다.")
         with col_dn:
-            st.markdown("**하행선** &nbsp;<span style='color:#f97316;font-size:0.85rem'>(지방방향)</span>",
-                        unsafe_allow_html=True)
+            st.markdown("**하행선**")
             deck_dn = make_map_lines(map_dn)
             if deck_dn:
                 st.pydeck_chart(deck_dn, use_container_width=True, key="tab2_map_dn")
