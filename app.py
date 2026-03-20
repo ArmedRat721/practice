@@ -390,7 +390,11 @@ def _delta_html(label: str, delta_str: str) -> str:
 def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None):
     """커스텀 KPI 카드. delta_str=작년대비, avg_delta_str=평균대비 (평균대비가 왼쪽)."""
     if delta_str is None and avg_delta_str is None:
-        col.metric(label, value)
+        col.markdown(f"""
+<div style="background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb">
+  <p style="color:#555;font-size:0.82rem;margin:0 0 6px 0;font-weight:500">{label}</p>
+  <p style="color:#111;font-size:2.1rem;font-weight:700;margin:0;line-height:1">{value}</p>
+</div>""", unsafe_allow_html=True)
         return
     # 평균대비(왼) | 작년대비(오) 2열 레이아웃
     left  = _delta_html("평균대비", avg_delta_str) if avg_delta_str is not None else ""
@@ -453,17 +457,17 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None,
 
     if show_yearly_avg and mean_total is not None:
         c1, c2, c3, c4, c5 = st.columns(5)
-        _metric_yoy(c1, "총 발생건수",        f"{total:,}건",      delta_total, avg_delta_total)
-        c2.metric("연평균 발생건수", f"{mean_total:,.1f}건")
-        _metric_yoy(c3, "구간 평균 발생건수", f"{avg}건",           delta_avg,   avg_delta_avg)
-        _metric_yoy(c4, "최다 발생건",        f"{max_c:,}건",       None,        avg_delta_max)
-        c5.metric("최고위험 노선", top_r)
+        _metric_yoy(c1, "총 발생건수",        f"{total:,}건",        delta_total, avg_delta_total)
+        _metric_yoy(c2, "연평균 발생건수",    f"{mean_total:,.1f}건")
+        _metric_yoy(c3, "구간 평균 발생건수", f"{avg}건",             delta_avg,   avg_delta_avg)
+        _metric_yoy(c4, "최다 발생건",        f"{max_c:,}건",         None,        avg_delta_max)
+        _metric_yoy(c5, "최고위험 노선",      top_r)
     else:
         c1, c2, c3, c4 = st.columns(4)
         _metric_yoy(c1, "총 발생건수",        f"{total:,}건", delta_total, avg_delta_total)
         _metric_yoy(c2, "구간 평균 발생건수", f"{avg}건",     delta_avg,   avg_delta_avg)
         _metric_yoy(c3, "최다 발생건",        f"{max_c:,}건", None,        avg_delta_max)
-        c4.metric("최고위험 노선", top_r)
+        _metric_yoy(c4, "최고위험 노선",      top_r)
 
 def chart_route(df: pd.DataFrame):
     """노선별 발생건수 수평 막대."""
