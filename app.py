@@ -458,9 +458,9 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None,
 
     if show_yearly_avg and mean_total is not None:
         c1, c2, c3, c4, c5 = st.columns(5)
-        _metric_yoy(c1, "총 발생건수",        f"{total:,}건",        delta_total, avg_delta_total)
+        _metric_yoy(c1, "총 발생건수",        f"{total:,}건",        delta_total)
         _metric_yoy(c2, "연평균 발생건수",    f"{mean_total:,.1f}건")
-        _metric_yoy(c3, "구간 평균 발생건수", f"{avg}건",             delta_avg,   avg_delta_avg)
+        _metric_yoy(c3, "구간 평균 발생건수", f"{avg}건",             delta_avg)
         _metric_yoy(c4, "최다 발생건",        f"{max_c:,}건",         None,        avg_delta_max)
         _metric_yoy(c5, "최고위험 노선",      top_r)
     else:
