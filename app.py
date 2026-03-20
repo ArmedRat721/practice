@@ -286,84 +286,83 @@ tab1, tab2, tab3 = st.tabs(["📊 전체 연도 비교", "📅 연도별 상세 
 # ─────────────────────────────────────────────────────────────────────────────
 with tab1:
     if not all_data:
-        st.warning("데이터가 없습니다. [데이터 관리] 탭에서 CSV 파일을 업로드해주세요.")
-        st.stop()
-
-    all_df = pd.concat(all_data.values(), ignore_index=True)
-
-    # KPI
-    st.subheader("📌 전체 집계")
-    kpi_row(all_df)
-    st.divider()
-
-    # 연도별 추이 (막대 + 꺾은선)
-    st.subheader("📈 연도별 발생건수 추이")
-    if len(years) >= 2:
-        tdf = pd.DataFrame([
-            {"연도": str(y),
-             "총 발생건수": int(all_data[y]["count"].sum()),
-             "구간 평균":   round(float(all_data[y]["count"].mean()), 2)}
-            for y in years
-        ])
-        fig_t = go.Figure()
-        fig_t.add_trace(go.Bar(
-            x=tdf["연도"], y=tdf["총 발생건수"], name="총 발생건수",
-            marker_color="#ef4444", opacity=0.85, yaxis="y1",
-        ))
-        fig_t.add_trace(go.Scatter(
-            x=tdf["연도"], y=tdf["구간 평균"], name="구간 평균",
-            mode="lines+markers",
-            line=dict(color="#4f8ef7", width=2, dash="dot"),
-            marker=dict(size=8), yaxis="y2",
-        ))
-        fig_t.update_layout(
-            paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-            yaxis =dict(title="총 건수", gridcolor=GRID, color="#ef4444"),
-            yaxis2=dict(title="평균", overlaying="y", side="right",
-                        gridcolor="rgba(0,0,0,0)", color="#4f8ef7"),
-            margin=dict(l=10, r=10, t=40, b=10), height=360,
-        )
-        st.plotly_chart(fig_t, use_container_width=True, key="tab1_trend")
+        st.warning("📭 데이터가 없습니다. **[데이터 관리]** 탭에서 CSV 파일을 업로드해주세요.")
     else:
-        st.info("연도 데이터가 2개 이상이면 추이 차트가 표시됩니다.")
+        all_df = pd.concat(all_data.values(), ignore_index=True)
 
-    st.divider()
+        # KPI
+        st.subheader("📌 전체 집계")
+        kpi_row(all_df)
+        st.divider()
 
-    # 노선 / 지역
-    col_r, col_g = st.columns(2)
-    with col_r:
-        st.subheader("🛣️ 노선별 발생건수 (상위 15)")
-        st.plotly_chart(chart_route(all_df), use_container_width=True, key="tab1_route")
-    with col_g:
-        st.subheader("🗺️ 지역(본부)별 발생건수")
-        st.plotly_chart(chart_region(all_df), use_container_width=True, key="tab1_region")
+        # 연도별 추이 (막대 + 꺾은선)
+        st.subheader("📈 연도별 발생건수 추이")
+        if len(years) >= 2:
+            tdf = pd.DataFrame([
+                {"연도": str(y),
+                 "총 발생건수": int(all_data[y]["count"].sum()),
+                 "구간 평균":   round(float(all_data[y]["count"].mean()), 2)}
+                for y in years
+            ])
+            fig_t = go.Figure()
+            fig_t.add_trace(go.Bar(
+                x=tdf["연도"], y=tdf["총 발생건수"], name="총 발생건수",
+                marker_color="#ef4444", opacity=0.85, yaxis="y1",
+            ))
+            fig_t.add_trace(go.Scatter(
+                x=tdf["연도"], y=tdf["구간 평균"], name="구간 평균",
+                mode="lines+markers",
+                line=dict(color="#4f8ef7", width=2, dash="dot"),
+                marker=dict(size=8), yaxis="y2",
+            ))
+            fig_t.update_layout(
+                paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                yaxis =dict(title="총 건수", gridcolor=GRID, color="#ef4444"),
+                yaxis2=dict(title="평균", overlaying="y", side="right",
+                            gridcolor="rgba(0,0,0,0)", color="#4f8ef7"),
+                margin=dict(l=10, r=10, t=40, b=10), height=360,
+            )
+            st.plotly_chart(fig_t, use_container_width=True, key="tab1_trend")
+        else:
+            st.info("연도 데이터가 2개 이상이면 추이 차트가 표시됩니다.")
 
-    st.divider()
+        st.divider()
 
-    # 노선×연도 매트릭스
-    st.subheader("🔥 노선 × 연도 발생건수 매트릭스")
-    if len(years) >= 2:
-        matrix = all_df.groupby(["route","year"])["count"].sum().unstack(fill_value=0)
-        matrix.columns = [f"{c}년" for c in matrix.columns]
-        matrix["합계"] = matrix.sum(axis=1)
-        matrix = matrix.sort_values("합계", ascending=False).head(25)
-        year_cols = [c for c in matrix.columns if c != "합계"]
-        styled = (
-            matrix.style
-            .background_gradient(cmap="RdYlBu_r", subset=year_cols, vmin=0)
-            .background_gradient(cmap="Blues",    subset=["합계"])
-            .format("{:.0f}")
-        )
-        st.dataframe(styled, use_container_width=True, height=460)
-    else:
-        st.info("연도 데이터가 2개 이상이면 매트릭스가 표시됩니다.")
+        # 노선 / 지역
+        col_r, col_g = st.columns(2)
+        with col_r:
+            st.subheader("🛣️ 노선별 발생건수 (상위 15)")
+            st.plotly_chart(chart_route(all_df), use_container_width=True, key="tab1_route")
+        with col_g:
+            st.subheader("🗺️ 지역(본부)별 발생건수")
+            st.plotly_chart(chart_region(all_df), use_container_width=True, key="tab1_region")
 
-    st.divider()
+        st.divider()
 
-    # 전체 상세 테이블
-    st.subheader("📋 전체 상세 데이터")
-    detail_table(all_df, "all")
+        # 노선×연도 매트릭스
+        st.subheader("🔥 노선 × 연도 발생건수 매트릭스")
+        if len(years) >= 2:
+            matrix = all_df.groupby(["route","year"])["count"].sum().unstack(fill_value=0)
+            matrix.columns = [f"{c}년" for c in matrix.columns]
+            matrix["합계"] = matrix.sum(axis=1)
+            matrix = matrix.sort_values("합계", ascending=False).head(25)
+            year_cols = [c for c in matrix.columns if c != "합계"]
+            styled = (
+                matrix.style
+                .background_gradient(cmap="RdYlBu_r", subset=year_cols, vmin=0)
+                .background_gradient(cmap="Blues",    subset=["합계"])
+                .format("{:.0f}")
+            )
+            st.dataframe(styled, use_container_width=True, height=460)
+        else:
+            st.info("연도 데이터가 2개 이상이면 매트릭스가 표시됩니다.")
+
+        st.divider()
+
+        # 전체 상세 테이블
+        st.subheader("📋 전체 상세 데이터")
+        detail_table(all_df, "all")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -371,67 +370,66 @@ with tab1:
 # ─────────────────────────────────────────────────────────────────────────────
 with tab2:
     if not all_data:
-        st.warning("데이터가 없습니다. [데이터 관리] 탭에서 CSV 파일을 업로드해주세요.")
-        st.stop()
-
-    sel_year = st.selectbox(
-        "📅 연도 선택",
-        sorted(all_data.keys()),
-        format_func=lambda y: f"{y}년",
-        key="tab2_year",
-    )
-
-    yr_df   = all_data[sel_year]
-    prev_yr = max((y for y in sorted(all_data.keys()) if y < sel_year), default=None)
-    prev_df = all_data.get(prev_yr) if prev_yr else None
-
-    # KPI
-    st.subheader(f"📌 {sel_year}년 집계")
-    kpi_row(yr_df, prev_df)
-    st.divider()
-
-    # 지도 + 노선 차트
-    col_m, col_c = st.columns([1.3, 0.7])
-    with col_m:
-        st.subheader("📍 지점 지도")
-        deck = make_map(yr_df)
-        if deck:
-            st.pydeck_chart(deck, use_container_width=True, key="tab2_map")
-        else:
-            st.info("지도에 표시할 위치 데이터가 없습니다.")
-    with col_c:
-        st.subheader("🛣️ 노선별 발생건수 (상위 15)")
-        st.plotly_chart(chart_route(yr_df), use_container_width=True, key="tab2_route")
-
-    st.divider()
-
-    # 지역 파이 + 위험구간 TOP10
-    col_p, col_s = st.columns(2)
-    with col_p:
-        st.subheader("🗺️ 지역(본부)별 발생건수")
-        st.plotly_chart(chart_region(yr_df), use_container_width=True, key="tab2_region")
-    with col_s:
-        st.subheader("🔎 위험 구간 TOP 10")
-        sec = yr_df.groupby(["route","section"])["count"].sum().nlargest(10).reset_index()
-        sec["label"] = sec["route"] + " " + sec["section"]
-        fig_s = px.bar(sec, x="count", y="label", orientation="h",
-                       labels={"count":"발생건수","label":"구간"},
-                       color="count",
-                       color_continuous_scale=["#4f8ef7","#f97316","#ef4444"])
-        fig_s.update_layout(
-            paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
-            showlegend=False, coloraxis_showscale=False,
-            yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-            xaxis=dict(gridcolor=GRID),
-            margin=dict(l=10, r=10, t=10, b=10), height=360,
+        st.warning("📭 데이터가 없습니다. **[데이터 관리]** 탭에서 CSV 파일을 업로드해주세요.")
+    else:
+        sel_year = st.selectbox(
+            "📅 연도 선택",
+            sorted(all_data.keys()),
+            format_func=lambda y: f"{y}년",
+            key="tab2_year",
         )
-        st.plotly_chart(fig_s, use_container_width=True, key="tab2_top10")
 
-    st.divider()
+        yr_df   = all_data[sel_year]
+        prev_yr = max((y for y in sorted(all_data.keys()) if y < sel_year), default=None)
+        prev_df = all_data.get(prev_yr) if prev_yr else None
 
-    # 상세 테이블
-    st.subheader(f"📋 {sel_year}년 상세 데이터")
-    detail_table(yr_df, str(sel_year))
+        # KPI
+        st.subheader(f"📌 {sel_year}년 집계")
+        kpi_row(yr_df, prev_df)
+        st.divider()
+
+        # 지도 + 노선 차트
+        col_m, col_c = st.columns([1.3, 0.7])
+        with col_m:
+            st.subheader("📍 지점 지도")
+            deck = make_map(yr_df)
+            if deck:
+                st.pydeck_chart(deck, use_container_width=True, key="tab2_map")
+            else:
+                st.info("지도에 표시할 위치 데이터가 없습니다.")
+        with col_c:
+            st.subheader("🛣️ 노선별 발생건수 (상위 15)")
+            st.plotly_chart(chart_route(yr_df), use_container_width=True, key="tab2_route")
+
+        st.divider()
+
+        # 지역 파이 + 위험구간 TOP10
+        col_p, col_s = st.columns(2)
+        with col_p:
+            st.subheader("🗺️ 지역(본부)별 발생건수")
+            st.plotly_chart(chart_region(yr_df), use_container_width=True, key="tab2_region")
+        with col_s:
+            st.subheader("🔎 위험 구간 TOP 10")
+            sec = yr_df.groupby(["route","section"])["count"].sum().nlargest(10).reset_index()
+            sec["label"] = sec["route"] + " " + sec["section"]
+            fig_s = px.bar(sec, x="count", y="label", orientation="h",
+                           labels={"count":"발생건수","label":"구간"},
+                           color="count",
+                           color_continuous_scale=["#4f8ef7","#f97316","#ef4444"])
+            fig_s.update_layout(
+                paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
+                showlegend=False, coloraxis_showscale=False,
+                yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
+                xaxis=dict(gridcolor=GRID),
+                margin=dict(l=10, r=10, t=10, b=10), height=360,
+            )
+            st.plotly_chart(fig_s, use_container_width=True, key="tab2_top10")
+
+        st.divider()
+
+        # 상세 테이블
+        st.subheader(f"📋 {sel_year}년 상세 데이터")
+        detail_table(yr_df, str(sel_year))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
