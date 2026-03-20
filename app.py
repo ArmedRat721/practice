@@ -389,9 +389,10 @@ def _delta_html(label: str, delta_str: str) -> str:
 
 def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None):
     """커스텀 KPI 카드. delta_str=작년대비, avg_delta_str=평균대비 (평균대비가 왼쪽)."""
+    _CARD = "background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb;min-height:130px"
     if delta_str is None and avg_delta_str is None:
         col.markdown(f"""
-<div style="background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb">
+<div style="{_CARD}">
   <p style="color:#555;font-size:0.82rem;margin:0 0 6px 0;font-weight:500">{label}</p>
   <p style="color:#111;font-size:2.1rem;font-weight:700;margin:0;line-height:1">{value}</p>
 </div>""", unsafe_allow_html=True)
@@ -408,7 +409,7 @@ def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None)
     else:
         inner = left or right
     col.markdown(f"""
-<div style="background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb">
+<div style="{_CARD}">
   <p style="color:#555;font-size:0.82rem;margin:0 0 6px 0;font-weight:500">{label}</p>
   <p style="color:#111;font-size:2.1rem;font-weight:700;margin:0 0 4px 0;line-height:1">{value}</p>
   {inner}
