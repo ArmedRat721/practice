@@ -430,15 +430,14 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
         )
 
     # ── 필터 헤더 라벨 ────────────────────────────────────────────────
-    lc1, lc2, lc3, lc4, lc5, lc6 = st.columns([2, 1.4, 1.4, 1.4, 1.2, 1])
+    lc1, lc2, lc3, lc4, lc5 = st.columns([2, 1.4, 1.4, 1.4, 1])
     lc1.caption("검색")
     lc2.caption("본부")
     lc3.caption("지사")
     lc4.caption("노선")
-    lc5.caption("상하행")
-    lc6.caption("최소 건수")
+    lc5.caption("최소 건수")
 
-    cf1, cf2, cf3, cf4, cf5, cf6 = st.columns([2, 1.4, 1.4, 1.4, 1.2, 1])
+    cf1, cf2, cf3, cf4, cf5 = st.columns([2, 1.4, 1.4, 1.4, 1])
 
     with cf1:
         search = st.text_input("검색", placeholder="노선·구간·방향 검색…",
@@ -470,12 +469,6 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
     tmp_rt = tmp_br if sel_rt == "전체 노선" else tmp_br[tmp_br["route"] == sel_rt]
 
     with cf5:
-        dir_list = sorted(tmp_rt["dir_yn"].dropna().unique().tolist()) if "dir_yn" in tmp_rt.columns else []
-        dir_opts = ["전체"] + dir_list
-        sel_dir  = st.selectbox("상하행", dir_opts, label_visibility="collapsed",
-                                key=f"{key_prefix}_dir")
-
-    with cf6:
         min_cnt = st.number_input("최소 건수", 0, int(df["count"].max()), 0,
                                   label_visibility="collapsed",
                                   key=f"{key_prefix}_cnt")
@@ -494,15 +487,13 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
         fdf = fdf[fdf["branch"] == sel_br]
     if sel_rt != "전체 노선":
         fdf = fdf[fdf["route"] == sel_rt]
-    if sel_dir != "전체":
-        fdf = fdf[fdf["dir_yn"] == sel_dir]
     if min_cnt > 0:
         fdf = fdf[fdf["count"] >= min_cnt]
 
-    want_cols  = ["year","region","branch","route","section","direction","dir_yn","count"]
+    want_cols  = ["year","region","branch","route","section","direction","count"]
     rename_map = {
         "year":"연도","region":"본부","branch":"지사","route":"노선명",
-        "section":"구간","direction":"방향","dir_yn":"상하행","count":"발생건수",
+        "section":"구간","direction":"방향","count":"발생건수",
     }
     avail_cols = [c for c in want_cols if c in fdf.columns]
     disp = fdf[avail_cols].rename(columns=rename_map)
