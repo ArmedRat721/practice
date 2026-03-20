@@ -125,10 +125,14 @@ def _assign_dir_yn(route: str, direction: str = "") -> str:
     ]
 
     for dir_keys, up_kws, down_kws in ROUTE_TABLE:
+        # 노선 식별: direction 컬럼(노선 유형) 또는 route 컬럼에 키워드 포함
         if any(k in d for k in dir_keys) or any(k in r for k in dir_keys):
-            if up_kws and any(kw in r for kw in up_kws):
+            # 종점 키워드를 route(노선명) AND direction(방향/종점도시) 양쪽에서 탐색
+            in_up   = any(kw in r for kw in up_kws)   or any(kw in d for kw in up_kws)
+            in_down = any(kw in r for kw in down_kws) or any(kw in d for kw in down_kws)
+            if up_kws and in_up:
                 return "상행선"
-            if down_kws and any(kw in r for kw in down_kws):
+            if down_kws and in_down:
                 return "하행선"
 
     return "미분류"
