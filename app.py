@@ -638,16 +638,18 @@ with tab1:
         # 노선×연도 매트릭스
         st.subheader("🔥 노선 × 연도 발생건수 매트릭스")
         if len(active_years) >= 2:
-            matrix = all_df.groupby(["route","year"])["count"].sum().unstack(fill_value=0)
+            matrix = all_df.groupby(["route","year"])["count"].sum().unstack()
             matrix.columns = [f"{c}년" for c in matrix.columns]
-            matrix["합계"] = matrix.sum(axis=1)
+            matrix["합계"] = matrix.sum(axis=1, skipna=True)
             matrix = matrix.sort_values("합계", ascending=False).head(25)
             year_cols = [c for c in matrix.columns if c != "합계"]
             styled = (
                 matrix.style
                 .background_gradient(cmap="RdYlBu_r", subset=year_cols, vmin=0)
                 .background_gradient(cmap="Oranges",  subset=["합계"])
-                .format("{:.0f}")
+                .highlight_null(color="white")
+                .format("{:.0f}", na_rep="-", subset=year_cols)
+                .format("{:.0f}", subset=["합계"])
             )
             st.dataframe(styled, use_container_width=True, height=460)
             st.markdown("""
