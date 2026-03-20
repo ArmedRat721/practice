@@ -563,6 +563,15 @@ with tab1:
     if not all_data:
         st.warning("📭 데이터가 없습니다. **[데이터 관리]** 탭에서 CSV 파일을 업로드해주세요.")
     else:
+        # KPI - 최근 연도 (연도 필터 적용 전 전체 데이터 기준)
+        latest_y  = max(all_data.keys())
+        prev_y    = max((y for y in all_data if y < latest_y), default=None)
+        latest_df = all_data[latest_y]
+        prev_df_l = all_data.get(prev_y)
+        st.subheader(f"📌 최근 연도 ({latest_y}년) 집계")
+        kpi_row(latest_df, prev_df_l)
+        st.divider()
+
         # ── 연도 선택 필터 ──────────────────────────────────────────────────
         sel_years_t1 = st.multiselect(
             "🔎 비교할 연도 선택 (미선택 시 전체)",
@@ -577,14 +586,6 @@ with tab1:
         # KPI - 전체 집계
         st.subheader("📌 전체 집계")
         kpi_row(all_df)
-
-        # KPI - 최근 연도
-        latest_y  = max(all_data.keys())
-        prev_y    = max((y for y in all_data if y < latest_y), default=None)
-        latest_df = all_data[latest_y]
-        prev_df_l = all_data.get(prev_y)
-        st.subheader(f"📌 최근 연도 ({latest_y}년) 집계")
-        kpi_row(latest_df, prev_df_l)
         st.divider()
 
         # 연도별 추이 (막대 + 꺾은선)
