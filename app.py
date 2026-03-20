@@ -291,9 +291,9 @@ def _risk_color(norm: float):
     else:
         return [34,  197, 94,  230]   # 초록
 
-def make_map_lines(df: pd.DataFrame, max_count: int = 0):
-    """구간을 점(ScatterplotLayer)으로 표시. 낮음=초록, 중간=노랑, 높음=빨강.
-    max_count: 색상 정규화 기준 최댓값 (0이면 df 내 최댓값 사용)"""
+def make_map_lines(df: pd.DataFrame, min_count: int = -1, max_count: int = 0):
+    """구간을 점(ScatterplotLayer)으로 표시. 최솟값=초록, 중간=노랑, 최댓값=빨강.
+    min_count/max_count: 색상 정규화 기준 (0/-1이면 df 내 값 사용)"""
     need = ["lat","lng","count","route","section","direction","dir_yn","km_start"]
     mdf  = df[[c for c in need if c in df.columns]].dropna(subset=["lat","lng"]).copy()
     if mdf.empty:
@@ -309,8 +309,10 @@ def make_map_lines(df: pd.DataFrame, max_count: int = 0):
            .agg(agg_cols)
     )
 
-    max_c = max_count if max_count > 0 else (int(mdf["count"].max()) or 1)
-    mdf["norm"]    = mdf["count"] / max_c
+    min_c   = min_count if min_count >= 0 else int(mdf["count"].min())
+    max_c   = max_count if max_count > 0  else int(mdf["count"].max())
+    range_c = (max_c - min_c) or 1
+    mdf["norm"] = ((mdf["count"] - min_c) / range_c).clip(0, 1)
     mdf["r"]       = mdf["norm"].apply(lambda n: _risk_color(n)[0])
     mdf["g"]       = mdf["norm"].apply(lambda n: _risk_color(n)[1])
     mdf["b"]       = mdf["norm"].apply(lambda n: _risk_color(n)[2])
@@ -696,9 +698,10 @@ with tab2:
         st.subheader(f"📋 {sel_year}년 상세 데이터")
         filtered_df = detail_table(yr_df, str(sel_year))
 
+        yr_min = int(yr_df["count"].min()) if not yr_df.empty else 0
         yr_max = int(yr_df["count"].max()) if not yr_df.empty else 1
         map_src = filtered_df if (filtered_df is not None and not filtered_df.empty) else yr_df
-        deck_all = make_map_lines(map_src, yr_max)
+        deck_all = make_map_lines(map_src, yr_min, yr_max)
         if deck_all:
             st.pydeck_chart(deck_all, use_container_width=True, key="tab2_map_all")
         else:
