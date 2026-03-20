@@ -651,7 +651,7 @@ with tab1:
                 matrix.style
                 .background_gradient(cmap="RdYlBu_r", subset=(_pd.IndexSlice[matrix.index[:-1], year_cols]))
                 .background_gradient(cmap="Oranges",  subset=(_pd.IndexSlice[matrix.index[:-1], ["합계"]]))
-                .background_gradient(cmap="Oranges",  subset=(_pd.IndexSlice[["연도별 합계"], year_cols]))
+                .background_gradient(cmap="Oranges",  subset=(_pd.IndexSlice[["연도별 합계"], year_cols]), axis=None)
                 .set_properties(**{"background-color": "white"}, subset=(_pd.IndexSlice[["연도별 합계"], ["합계"]]))
                 .highlight_null(color="white")
                 .set_properties(**{"font-weight": "bold"}, subset=(_pd.IndexSlice[["연도별 합계"], :]))
