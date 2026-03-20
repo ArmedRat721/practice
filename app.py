@@ -443,11 +443,11 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None,
     avg_delta_total = avg_delta_avg = avg_delta_max = None
     mean_total = None
     if all_years_data and len(all_years_data) > 1:
-        yr_totals = [int(d["count"].sum())               for d in all_years_data.values()]
-        yr_avgs   = [round(float(d["count"].mean()), 2)  for d in all_years_data.values()]
-        yr_maxs   = [int(d["count"].max())               for d in all_years_data.values()]
+        yr_totals  = [int(d["count"].sum())  for d in all_years_data.values()]
+        yr_maxs    = [int(d["count"].max())  for d in all_years_data.values()]
         mean_total = round(sum(yr_totals) / len(yr_totals), 2)
-        mean_avg   = round(sum(yr_avgs)   / len(yr_avgs),   2)
+        all_concat = pd.concat(list(all_years_data.values()), ignore_index=True)
+        mean_avg   = round(float(all_concat["count"].mean()), 2)
         mean_max   = round(sum(yr_maxs)   / len(yr_maxs),   2)
         if mean_total:
             avg_delta_total = _fmt_delta(total - mean_total, mean_total)
