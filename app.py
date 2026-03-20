@@ -626,36 +626,6 @@ with tab2:
         kpi_row(yr_df, prev_df)
         st.divider()
 
-        # 지도 — 상행선 / 하행선 분리 (parse_csv_bytes에서 생성된 dir_yn 컬럼 사용)
-        st.subheader("📍 지점 지도")
-        map_up = yr_df[yr_df["dir_yn"] == "상행선"]
-        map_dn = yr_df[yr_df["dir_yn"] == "하행선"]
-        # 두 지도가 동일한 색상 기준을 사용하도록 전체 데이터의 최댓값으로 통일
-        yr_max = int(yr_df["count"].max()) if not yr_df.empty else 1
-        col_up, col_dn = st.columns(2)
-        with col_up:
-            st.markdown("**상행선**")
-            deck_up = make_map_lines(map_up, yr_max)
-            if deck_up:
-                st.pydeck_chart(deck_up, use_container_width=True, key="tab2_map_up")
-            else:
-                st.info("상행선 데이터가 없습니다.")
-        with col_dn:
-            st.markdown("**하행선**")
-            deck_dn = make_map_lines(map_dn, yr_max)
-            if deck_dn:
-                st.pydeck_chart(deck_dn, use_container_width=True, key="tab2_map_dn")
-            else:
-                st.info("하행선 데이터가 없습니다.")
-        st.markdown("""
-<div style="font-size:0.78rem;color:#8892a4;margin-top:4px">
-  <b>선 색상 기준</b> &nbsp;|&nbsp;
-  <span style="background:#eab308;color:#111;padding:1px 8px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
-  <span style="background:#f97316;color:white;padding:1px 8px;border-radius:3px">■ 중간</span>&nbsp;→&nbsp;
-  <span style="background:#ef4444;color:white;padding:1px 8px;border-radius:3px">■ 높음</span>
-  &nbsp;(해당 연도 최고 발생건수 기준 · 발생건수 많을수록 점이 크고 빨갛게 표시)
-</div>""", unsafe_allow_html=True)
-
         # 노선 차트
         st.subheader("🛣️ 노선별 발생건수 (상위 15)")
         st.plotly_chart(chart_route(yr_df), use_container_width=True, key="tab2_route")
@@ -689,9 +659,36 @@ with tab2:
 
         st.divider()
 
-        # 상세 테이블
+        # 상세 테이블 + 지점 지도
         st.subheader(f"📋 {sel_year}년 상세 데이터")
         detail_table(yr_df, str(sel_year))
+
+        yr_max = int(yr_df["count"].max()) if not yr_df.empty else 1
+        map_up = yr_df[yr_df["dir_yn"] == "상행선"]
+        map_dn = yr_df[yr_df["dir_yn"] == "하행선"]
+        col_up, col_dn = st.columns(2)
+        with col_up:
+            st.markdown("**상행선**")
+            deck_up = make_map_lines(map_up, yr_max)
+            if deck_up:
+                st.pydeck_chart(deck_up, use_container_width=True, key="tab2_map_up")
+            else:
+                st.info("상행선 데이터가 없습니다.")
+        with col_dn:
+            st.markdown("**하행선**")
+            deck_dn = make_map_lines(map_dn, yr_max)
+            if deck_dn:
+                st.pydeck_chart(deck_dn, use_container_width=True, key="tab2_map_dn")
+            else:
+                st.info("하행선 데이터가 없습니다.")
+        st.markdown("""
+<div style="font-size:0.78rem;color:#8892a4;margin-top:4px">
+  <b>색상 기준</b> &nbsp;|&nbsp;
+  <span style="background:#eab308;color:#111;padding:1px 8px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
+  <span style="background:#f97316;color:white;padding:1px 8px;border-radius:3px">■ 중간</span>&nbsp;→&nbsp;
+  <span style="background:#ef4444;color:white;padding:1px 8px;border-radius:3px">■ 높음</span>
+  &nbsp;(해당 연도 최고 발생건수 기준)
+</div>""", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
