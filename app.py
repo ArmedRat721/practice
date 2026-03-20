@@ -324,7 +324,7 @@ with tab1:
                         gridcolor="rgba(0,0,0,0)", color="#4f8ef7"),
             margin=dict(l=10, r=10, t=40, b=10), height=360,
         )
-        st.plotly_chart(fig_t, use_container_width=True)
+        st.plotly_chart(fig_t, use_container_width=True, key="tab1_trend")
     else:
         st.info("연도 데이터가 2개 이상이면 추이 차트가 표시됩니다.")
 
@@ -334,10 +334,10 @@ with tab1:
     col_r, col_g = st.columns(2)
     with col_r:
         st.subheader("🛣️ 노선별 발생건수 (상위 15)")
-        st.plotly_chart(chart_route(all_df), use_container_width=True)
+        st.plotly_chart(chart_route(all_df), use_container_width=True, key="tab1_route")
     with col_g:
         st.subheader("🗺️ 지역(본부)별 발생건수")
-        st.plotly_chart(chart_region(all_df), use_container_width=True)
+        st.plotly_chart(chart_region(all_df), use_container_width=True, key="tab1_region")
 
     st.divider()
 
@@ -396,12 +396,12 @@ with tab2:
         st.subheader("📍 지점 지도")
         deck = make_map(yr_df)
         if deck:
-            st.pydeck_chart(deck, use_container_width=True)
+            st.pydeck_chart(deck, use_container_width=True, key="tab2_map")
         else:
             st.info("지도에 표시할 위치 데이터가 없습니다.")
     with col_c:
         st.subheader("🛣️ 노선별 발생건수 (상위 15)")
-        st.plotly_chart(chart_route(yr_df), use_container_width=True)
+        st.plotly_chart(chart_route(yr_df), use_container_width=True, key="tab2_route")
 
     st.divider()
 
@@ -409,7 +409,7 @@ with tab2:
     col_p, col_s = st.columns(2)
     with col_p:
         st.subheader("🗺️ 지역(본부)별 발생건수")
-        st.plotly_chart(chart_region(yr_df), use_container_width=True)
+        st.plotly_chart(chart_region(yr_df), use_container_width=True, key="tab2_region")
     with col_s:
         st.subheader("🔎 위험 구간 TOP 10")
         sec = yr_df.groupby(["route","section"])["count"].sum().nlargest(10).reset_index()
@@ -425,7 +425,7 @@ with tab2:
             xaxis=dict(gridcolor=GRID),
             margin=dict(l=10, r=10, t=10, b=10), height=360,
         )
-        st.plotly_chart(fig_s, use_container_width=True)
+        st.plotly_chart(fig_s, use_container_width=True, key="tab2_top10")
 
     st.divider()
 
