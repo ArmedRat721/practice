@@ -490,12 +490,22 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
     }
     avail_cols = [c for c in want_cols if c in fdf.columns]
     disp = fdf[avail_cols].rename(columns=rename_map)
+    disp.index = range(1, len(disp) + 1)
+    styled = (
+        disp.style
+        .set_properties(**{"text-align": "center", "color": "black"})
+        .set_table_styles([
+            {"selector": "th", "props": [("text-align", "center"), ("color", "black")]},
+            {"selector": "td", "props": [("text-align", "center"), ("color", "black")]},
+        ])
+    )
     st.caption(f"총 {len(disp):,}건")
-    st.dataframe(disp, use_container_width=True, height=360)
+    st.dataframe(styled, use_container_width=True, height=360)
     csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("⬇ CSV 내보내기", data=csv_out,
                        file_name=f"roadkill_{key_prefix}.csv",
                        mime="text/csv", key=f"{key_prefix}_dl")
+    return fdf
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 헤더
@@ -684,10 +694,11 @@ with tab2:
 
         # 상세 테이블 + 지점 지도
         st.subheader(f"📋 {sel_year}년 상세 데이터")
-        detail_table(yr_df, str(sel_year))
+        filtered_df = detail_table(yr_df, str(sel_year))
 
         yr_max = int(yr_df["count"].max()) if not yr_df.empty else 1
-        deck_all = make_map_lines(yr_df, yr_max)
+        map_src = filtered_df if (filtered_df is not None and not filtered_df.empty) else yr_df
+        deck_all = make_map_lines(map_src, yr_max)
         if deck_all:
             st.pydeck_chart(deck_all, use_container_width=True, key="tab2_map_all")
         else:
