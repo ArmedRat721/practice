@@ -132,7 +132,7 @@ if "all_data" not in st.session_state:
         st.session_state.all_data = load_all_preset()
 
 all_data: dict = st.session_state.all_data
-years = sorted(all_data.keys())
+years = sorted(all_data.keys(), reverse=True)
 
 # ── 공통 스타일 상수 ───────────────────────────────────────────────────────────
 DARK_BG = "rgba(0,0,0,0)"
@@ -181,16 +181,26 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
     max_c = int(df["count"].max())
     rc    = df.groupby("route")["count"].sum()
     top_r = rc.idxmax() if not rc.empty else "—"
-    top_c = int(rc.max()) if not rc.empty else 0
-    yoy   = None
+
+    delta_total = None
+    delta_avg   = None
     if prev_df is not None and not prev_df.empty:
         pt = int(prev_df["count"].sum())
+        pa = round(float(prev_df["count"].mean()), 2)
         if pt > 0:
-            d   = round((total - pt) / pt * 100, 1)
-            yoy = f"{'+' if d >= 0 else ''}{d}%"
+            diff_t = total - pt
+            pct_t  = round(diff_t / pt * 100, 1)
+            s      = "+" if diff_t >= 0 else ""
+            delta_total = f"{s}{diff_t:,}건 ({s}{pct_t}%)"
+        if pa > 0:
+            diff_a = round(avg - pa, 2)
+            pct_a  = round(diff_a / pa * 100, 1)
+            s2     = "+" if diff_a >= 0 else ""
+            delta_avg = f"{s2}{diff_a}건 ({s2}{pct_a}%)"
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("총 발생건수",        f"{total:,}건", yoy)
-    c2.metric("구간 평균 발생건수", f"{avg}건")
+    c1.metric("총 발생건수",        f"{total:,}건", delta_total, delta_color="inverse")
+    c2.metric("구간 평균 발생건수", f"{avg}건",     delta_avg,   delta_color="inverse")
     c3.metric("최다 단일구간",      f"{max_c:,}건")
     c4.metric("최고위험 노선",      top_r)
 
@@ -293,17 +303,25 @@ with tab1:
         # ── 연도 선택 필터 ──────────────────────────────────────────────────
         sel_years_t1 = st.multiselect(
             "🔎 비교할 연도 선택 (미선택 시 전체)",
-            options=sorted(all_data.keys()),
-            default=sorted(all_data.keys()),
+            options=sorted(all_data.keys(), reverse=True),
+            default=sorted(all_data.keys(), reverse=True),
             format_func=lambda y: f"{y}년",
             key="tab1_year_filter",
         )
-        active_years = sorted(sel_years_t1) if sel_years_t1 else sorted(all_data.keys())
+        active_years = sorted(sel_years_t1, reverse=True) if sel_years_t1 else sorted(all_data.keys(), reverse=True)
         all_df = pd.concat([all_data[y] for y in active_years], ignore_index=True)
 
-        # KPI
+        # KPI - 전체 집계
         st.subheader("📌 전체 집계")
         kpi_row(all_df)
+
+        # KPI - 최근 연도
+        latest_y  = max(all_data.keys())
+        prev_y    = max((y for y in all_data if y < latest_y), default=None)
+        latest_df = all_data[latest_y]
+        prev_df_l = all_data.get(prev_y)
+        st.subheader(f"📌 최근 연도 ({latest_y}년) 집계")
+        kpi_row(latest_df, prev_df_l)
         st.divider()
 
         # 연도별 추이 (막대 + 꺾은선)
@@ -313,7 +331,7 @@ with tab1:
                 {"연도": str(y),
                  "총 발생건수": int(all_data[y]["count"].sum()),
                  "구간 평균":   round(float(all_data[y]["count"].mean()), 2)}
-                for y in active_years
+                for y in sorted(active_years)   # 차트 X축은 오름차순(시계열)
             ])
             fig_t = go.Figure()
             fig_t.add_trace(go.Bar(
@@ -385,7 +403,7 @@ with tab2:
     else:
         sel_year = st.selectbox(
             "📅 연도 선택",
-            sorted(all_data.keys()),
+            sorted(all_data.keys(), reverse=True),
             format_func=lambda y: f"{y}년",
             key="tab2_year",
         )
@@ -495,7 +513,7 @@ with tab3:
         st.info("등록된 데이터가 없습니다.")
     else:
         summary_rows = []
-        for y in sorted(all_data.keys()):
+        for y in sorted(all_data.keys(), reverse=True):
             ydf = all_data[y]
             summary_rows.append({
                 "연도":          f"{y}년",
@@ -521,7 +539,7 @@ with tab3:
         with del_c1:
             del_year = st.selectbox(
                 "삭제할 연도 선택",
-                sorted(all_data.keys()),
+                sorted(all_data.keys(), reverse=True),
                 format_func=lambda y: (
                     f"{y}년  ·  총 {int(all_data[y]['count'].sum()):,}건"
                     f"  ·  {len(all_data[y]):,}개 구간"
