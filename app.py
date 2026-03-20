@@ -14,13 +14,13 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── Paths ──────────────────────────────────────────────────────────────
+# ── Paths ──────────────────────────────────────────────────────────────────────
 try:
     BASE_DIR = Path(__file__).parent
 except NameError:
     BASE_DIR = Path.cwd()
 
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR  = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 DOWNLOADS = Path.home() / "Downloads"
 
@@ -33,7 +33,7 @@ PRESET_FILENAMES = {
     2025: "한국도로공사_로드킬 데이터 정보_20250501.csv",
 }
 
-# ── Data helpers ────────────────────────────────────────────────────────
+# ── Data helpers ───────────────────────────────────────────────────────────────
 def detect_encoding(data: bytes) -> str:
     result = chardet.detect(data[:32768])
     enc = result.get("encoding") or "cp949"
@@ -76,11 +76,11 @@ def parse_csv_bytes(data: bytes, year: int) -> pd.DataFrame:
     df = normalize_df(df)
 
     required = ["region", "route", "section", "direction", "count", "lat", "lng"]
-    missing = [c for c in required if c not in df.columns]
+    missing  = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"컬럼 인식 실패: {missing}\n인식된 컬럼: {list(df.columns)}")
 
-    df["year"] = year
+    df["year"]  = year
     df["count"] = pd.to_numeric(df["count"], errors="coerce").fillna(0).astype(int)
     df["lat"]   = pd.to_numeric(df["lat"],   errors="coerce")
     df["lng"]   = pd.to_numeric(df["lng"],   errors="coerce")
@@ -99,9 +99,8 @@ def parse_csv_bytes(data: bytes, year: int) -> pd.DataFrame:
         else:
             df[col] = ""
 
-    keep = ["year", "region", "branch", "route", "section",
-            "direction", "km_start", "count", "lat", "lng"]
-    return df[keep].reset_index(drop=True)
+    return df[["year", "region", "branch", "route", "section",
+               "direction", "km_start", "count", "lat", "lng"]].reset_index(drop=True)
 
 @st.cache_data(show_spinner=False)
 def load_all_preset() -> dict:
@@ -127,7 +126,7 @@ def load_all_preset() -> dict:
                 pass
     return result
 
-# ── Session state ───────────────────────────────────────────────────────
+# ── Session state ──────────────────────────────────────────────────────────────
 if "all_data" not in st.session_state:
     with st.spinner("데이터 로딩 중…"):
         st.session_state.all_data = load_all_preset()
@@ -135,125 +134,169 @@ if "all_data" not in st.session_state:
 all_data: dict = st.session_state.all_data
 years = sorted(all_data.keys())
 
-# ── Sidebar ─────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.header("📅 연도 선택")
-    year_opts = ["전체 비교"] + [f"{y}년" for y in years]
-    sel = st.radio("", year_opts, label_visibility="collapsed")
+# ── 공통 스타일 상수 ───────────────────────────────────────────────────────────
+DARK_BG = "rgba(0,0,0,0)"
+GRID    = "#2e3347"
+FONT    = dict(color="#8892a4")
+PALETTE = ["#4f8ef7","#7c5cfc","#22c55e","#f59e0b",
+           "#ef4444","#06b6d4","#ec4899","#84cc16"]
 
-    st.divider()
+# ── 공통 함수 ──────────────────────────────────────────────────────────────────
+def make_map(df: pd.DataFrame):
+    """PyDeck ScatterplotLayer 반환. 데이터 없으면 None."""
+    mdf = df[["lat","lng","count","route","section","direction","year","region"]].dropna().copy()
+    if mdf.empty:
+        return None
+    mx   = mdf["count"].max() or 1
+    norm = mdf["count"] / mx
+    mdf["r"]       = (norm * 200 + 55).astype(int)
+    mdf["g"]       = ((1 - norm) * 100).astype(int)
+    mdf["b"]       = ((1 - norm) * 220).astype(int)
+    mdf["radius"]  = (norm * 3000 + 500).astype(int)
+    mdf["tooltip"] = (
+        mdf["route"] + " " + mdf["section"] +
+        " (" + mdf["direction"] + ")\n" +
+        mdf["count"].astype(str) + "건 | " +
+        mdf["year"].astype(str) + "년"
+    )
+    layer = pdk.Layer(
+        "ScatterplotLayer", mdf,
+        get_position=["lng","lat"],
+        get_color=["r","g","b", 200],
+        get_radius="radius",
+        pickable=True,
+    )
+    return pdk.Deck(
+        layers=[layer],
+        initial_view_state=pdk.ViewState(
+            latitude=36.5, longitude=127.8, zoom=6.3, pitch=0),
+        map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+        tooltip={"text": "{tooltip}"},
+    )
 
-    st.header("📂 새 연도 데이터 추가")
-    up_file = st.file_uploader("CSV 파일", type=["csv"], label_visibility="collapsed")
-    up_year = st.number_input("연도", 2000, 2099, 2024)
-    if st.button("업로드", type="primary", use_container_width=True):
-        if up_file:
-            try:
-                raw = up_file.read()
-                df_up = parse_csv_bytes(raw, int(up_year))
-                st.session_state.all_data[int(up_year)] = df_up
-                (DATA_DIR / f"{int(up_year)}_roadkill.csv").write_bytes(raw)
-                st.cache_data.clear()
-                st.success(f"✓ {up_year}년 {len(df_up):,}건 업로드 완료!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"오류: {e}")
-        else:
-            st.warning("파일을 선택하세요.")
+def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
+    """4개 KPI 카드 렌더링."""
+    total = int(df["count"].sum())
+    avg   = round(float(df["count"].mean()), 2)
+    max_c = int(df["count"].max())
+    rc    = df.groupby("route")["count"].sum()
+    top_r = rc.idxmax() if not rc.empty else "—"
+    top_c = int(rc.max()) if not rc.empty else 0
+    yoy   = None
+    if prev_df is not None and not prev_df.empty:
+        pt = int(prev_df["count"].sum())
+        if pt > 0:
+            d   = round((total - pt) / pt * 100, 1)
+            yoy = f"{'+' if d >= 0 else ''}{d}%"
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("총 발생건수",        f"{total:,}건", yoy)
+    c2.metric("구간 평균 발생건수", f"{avg}건",      f"{len(df):,}개 구간")
+    c3.metric("최다 단일구간",      f"{max_c:,}건")
+    c4.metric("최고위험 노선",      top_r,           f"{top_c:,}건")
 
-    if years:
-        st.divider()
-        st.header("🗑️ 연도 삭제")
-        del_year = st.selectbox("", years, format_func=lambda y: f"{y}년",
-                                label_visibility="collapsed")
-        if st.button("삭제", type="secondary", use_container_width=True):
-            del st.session_state.all_data[del_year]
-            p = DATA_DIR / f"{del_year}_roadkill.csv"
-            if p.exists():
-                p.unlink()
-            st.success(f"✓ {del_year}년 삭제 완료")
-            st.rerun()
+def chart_route(df: pd.DataFrame):
+    """노선별 발생건수 수평 막대."""
+    rc = df.groupby("route")["count"].sum().nlargest(15).reset_index()
+    rc.columns = ["노선","발생건수"]
+    mv = rc["발생건수"].max() or 1
+    rc["color"] = rc["발생건수"].apply(
+        lambda v: "#ef4444" if v/mv > 0.6 else ("#f97316" if v/mv > 0.3 else "#4f8ef7")
+    )
+    fig = px.bar(rc, x="발생건수", y="노선", orientation="h",
+                 color="노선",
+                 color_discrete_map={r: c for r, c in zip(rc["노선"], rc["color"])})
+    fig.update_layout(
+        paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
+        showlegend=False,
+        yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
+        xaxis=dict(gridcolor=GRID),
+        margin=dict(l=10, r=10, t=10, b=10), height=360,
+    )
+    return fig
 
-# ── Header ──────────────────────────────────────────────────────────────
+def chart_region(df: pd.DataFrame):
+    """지역(본부)별 파이 차트."""
+    reg = df[df["region"] != ""].groupby("region")["count"].sum().reset_index()
+    reg.columns = ["본부","발생건수"]
+    fig = px.pie(reg, names="본부", values="발생건수", hole=0.4,
+                 color_discrete_sequence=PALETTE)
+    fig.update_layout(
+        paper_bgcolor=DARK_BG, font=FONT,
+        legend=dict(orientation="h", yanchor="top", y=-0.05),
+        margin=dict(l=10, r=10, t=10, b=40), height=360,
+    )
+    return fig
+
+def detail_table(df: pd.DataFrame, key_prefix: str):
+    """검색·필터·테이블·CSV 다운로드 블록."""
+    cf1, cf2, cf3, cf4 = st.columns([2, 1.5, 1.5, 1])
+    with cf1:
+        search = st.text_input("검색", placeholder="노선·구간·방향 검색…",
+                               label_visibility="collapsed",
+                               key=f"{key_prefix}_search")
+    with cf2:
+        reg_opts = ["전체 본부"] + sorted(df["region"].dropna().unique().tolist())
+        sel_reg  = st.selectbox("본부", reg_opts, label_visibility="collapsed",
+                                key=f"{key_prefix}_reg")
+    with cf3:
+        rt_opts = ["전체 노선"] + sorted(df["route"].dropna().unique().tolist())
+        sel_rt  = st.selectbox("노선", rt_opts, label_visibility="collapsed",
+                               key=f"{key_prefix}_rt")
+    with cf4:
+        min_cnt = st.number_input("최소 건수", 0, int(df["count"].max()), 0,
+                                  key=f"{key_prefix}_cnt")
+
+    fdf = df.copy()
+    if search:
+        mask = fdf[["route","section","direction","region","branch"]].apply(
+            lambda col: col.astype(str).str.contains(search, case=False, na=False)
+        ).any(axis=1)
+        fdf = fdf[mask]
+    if sel_reg != "전체 본부":
+        fdf = fdf[fdf["region"] == sel_reg]
+    if sel_rt != "전체 노선":
+        fdf = fdf[fdf["route"] == sel_rt]
+    if min_cnt > 0:
+        fdf = fdf[fdf["count"] >= min_cnt]
+
+    disp = fdf[["year","region","branch","route","section","direction","count"]].rename(columns={
+        "year":"연도","region":"본부","branch":"지사","route":"노선명",
+        "section":"구간","direction":"방향","count":"발생건수",
+    })
+    st.caption(f"총 {len(disp):,}건")
+    st.dataframe(disp, use_container_width=True, height=360)
+    csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+    st.download_button("⬇ CSV 내보내기", data=csv_out,
+                       file_name=f"roadkill_{key_prefix}.csv",
+                       mime="text/csv", key=f"{key_prefix}_dl")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 헤더
+# ══════════════════════════════════════════════════════════════════════════════
 st.title("🦌 국내 고속도로 로드킬 데이터 대시보드")
 st.caption("데이터 출처: 한국도로공사 공공데이터 | 분석 기간: 2019 ~ 2025년")
 
-if not all_data:
-    st.warning("데이터가 없습니다. 사이드바에서 CSV 파일을 업로드해주세요.")
-    st.stop()
+# ══════════════════════════════════════════════════════════════════════════════
+# 3개 탭
+# ══════════════════════════════════════════════════════════════════════════════
+tab1, tab2, tab3 = st.tabs(["📊 전체 연도 비교", "📅 연도별 상세 보기", "⚙️ 데이터 관리"])
 
-# ── Active data ─────────────────────────────────────────────────────────
-if sel == "전체 비교":
-    active_year = None
-    df = pd.concat(all_data.values(), ignore_index=True)
-else:
-    active_year = int(sel.replace("년", ""))
-    df = all_data.get(active_year, pd.DataFrame())
-    if df.empty:
-        st.warning("해당 연도 데이터가 없습니다.")
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB 1 : 전체 연도 비교
+# ─────────────────────────────────────────────────────────────────────────────
+with tab1:
+    if not all_data:
+        st.warning("데이터가 없습니다. [데이터 관리] 탭에서 CSV 파일을 업로드해주세요.")
         st.stop()
 
-# ── KPI Cards ───────────────────────────────────────────────────────────
-total = int(df["count"].sum())
-avg   = round(float(df["count"].mean()), 2)
-max_c = int(df["count"].max())
-rc    = df.groupby("route")["count"].sum()
-top_r = rc.idxmax() if not rc.empty else "—"
-top_c = int(rc.max())  if not rc.empty else 0
+    all_df = pd.concat(all_data.values(), ignore_index=True)
 
-yoy_str = None
-if active_year:
-    prev = max((y for y in years if y < active_year), default=None)
-    if prev and prev in all_data:
-        prev_total = int(all_data[prev]["count"].sum())
-        if prev_total > 0:
-            delta = round((total - prev_total) / prev_total * 100, 1)
-            yoy_str = f"{'+' if delta >= 0 else ''}{delta}%"
+    # KPI
+    st.subheader("📌 전체 집계")
+    kpi_row(all_df)
+    st.divider()
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("총 발생건수",        f"{total:,}건", yoy_str)
-c2.metric("구간 평균 발생건수", f"{avg}건",      f"{len(df):,}개 구간")
-c3.metric("최다 단일구간",      f"{max_c:,}건")
-c4.metric("최고위험 노선",      top_r,           f"{top_c:,}건")
-
-st.divider()
-
-# ── Map + Trend ─────────────────────────────────────────────────────────
-col_map, col_trend = st.columns([1.3, 0.7])
-
-with col_map:
-    st.subheader("📍 지도 핫스팟 시각화")
-    map_df = df[["lat", "lng", "count", "route", "section",
-                 "direction", "year", "region"]].dropna().copy()
-    if not map_df.empty:
-        mx   = map_df["count"].max() or 1
-        norm = map_df["count"] / mx
-        map_df["r"]      = (norm * 200 + 55).astype(int)
-        map_df["g"]      = ((1 - norm) * 100).astype(int)
-        map_df["b"]      = ((1 - norm) * 220).astype(int)
-        map_df["radius"] = (norm * 3000 + 500).astype(int)
-        map_df["tooltip"] = (
-            map_df["route"] + " " + map_df["section"] +
-            " (" + map_df["direction"] + ")\n" +
-            map_df["count"].astype(str) + "건 | " +
-            map_df["year"].astype(str) + "년"
-        )
-        layer = pdk.Layer(
-            "ScatterplotLayer", map_df,
-            get_position=["lng", "lat"],
-            get_color=["r", "g", "b", 200],
-            get_radius="radius",
-            pickable=True,
-        )
-        st.pydeck_chart(pdk.Deck(
-            layers=[layer],
-            initial_view_state=pdk.ViewState(
-                latitude=36.5, longitude=127.8, zoom=6.3, pitch=0),
-            map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-            tooltip={"text": "{tooltip}"},
-        ), use_container_width=True)
-
-with col_trend:
+    # 연도별 추이 (막대 + 꺾은선)
     st.subheader("📈 연도별 발생건수 추이")
     if len(years) >= 2:
         tdf = pd.DataFrame([
@@ -262,133 +305,228 @@ with col_trend:
              "구간 평균":   round(float(all_data[y]["count"].mean()), 2)}
             for y in years
         ])
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
+        fig_t = go.Figure()
+        fig_t.add_trace(go.Bar(
             x=tdf["연도"], y=tdf["총 발생건수"], name="총 발생건수",
-            mode="lines+markers", line=dict(color="#ef4444", width=2),
-            marker=dict(size=8), yaxis="y1",
+            marker_color="#ef4444", opacity=0.85, yaxis="y1",
         ))
-        fig.add_trace(go.Scatter(
+        fig_t.add_trace(go.Scatter(
             x=tdf["연도"], y=tdf["구간 평균"], name="구간 평균",
-            mode="lines+markers", line=dict(color="#4f8ef7", width=2, dash="dot"),
+            mode="lines+markers",
+            line=dict(color="#4f8ef7", width=2, dash="dot"),
             marker=dict(size=8), yaxis="y2",
         ))
-        if active_year:
-            fig.add_vline(x=str(active_year), line_dash="dash",
-                          line_color="rgba(255,255,255,0.4)", line_width=1)
-        fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#8892a4"),
+        fig_t.update_layout(
+            paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-            yaxis=dict(title="총 건수", gridcolor="#333", color="#ef4444"),
+            yaxis =dict(title="총 건수", gridcolor=GRID, color="#ef4444"),
             yaxis2=dict(title="평균", overlaying="y", side="right",
                         gridcolor="rgba(0,0,0,0)", color="#4f8ef7"),
             margin=dict(l=10, r=10, t=40, b=10), height=360,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig_t, use_container_width=True)
     else:
         st.info("연도 데이터가 2개 이상이면 추이 차트가 표시됩니다.")
 
-# ── Route + Region ──────────────────────────────────────────────────────
-col_route, col_region = st.columns(2)
+    st.divider()
 
-with col_route:
-    st.subheader("🛣️ 노선별 발생건수 (상위 15)")
-    rc_top = df.groupby("route")["count"].sum().nlargest(15).reset_index()
-    rc_top.columns = ["노선", "발생건수"]
-    mv = rc_top["발생건수"].max() or 1
-    rc_top["color"] = rc_top["발생건수"].apply(
-        lambda v: "#ef4444" if v / mv > 0.6 else ("#f97316" if v / mv > 0.3 else "#4f8ef7")
+    # 노선 / 지역
+    col_r, col_g = st.columns(2)
+    with col_r:
+        st.subheader("🛣️ 노선별 발생건수 (상위 15)")
+        st.plotly_chart(chart_route(all_df), use_container_width=True)
+    with col_g:
+        st.subheader("🗺️ 지역(본부)별 발생건수")
+        st.plotly_chart(chart_region(all_df), use_container_width=True)
+
+    st.divider()
+
+    # 노선×연도 매트릭스
+    st.subheader("🔥 노선 × 연도 발생건수 매트릭스")
+    if len(years) >= 2:
+        matrix = all_df.groupby(["route","year"])["count"].sum().unstack(fill_value=0)
+        matrix.columns = [f"{c}년" for c in matrix.columns]
+        matrix["합계"] = matrix.sum(axis=1)
+        matrix = matrix.sort_values("합계", ascending=False).head(25)
+        year_cols = [c for c in matrix.columns if c != "합계"]
+        styled = (
+            matrix.style
+            .background_gradient(cmap="RdYlBu_r", subset=year_cols, vmin=0)
+            .background_gradient(cmap="Blues",    subset=["합계"])
+            .format("{:.0f}")
+        )
+        st.dataframe(styled, use_container_width=True, height=460)
+    else:
+        st.info("연도 데이터가 2개 이상이면 매트릭스가 표시됩니다.")
+
+    st.divider()
+
+    # 전체 상세 테이블
+    st.subheader("📋 전체 상세 데이터")
+    detail_table(all_df, "all")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB 2 : 연도별 상세 보기
+# ─────────────────────────────────────────────────────────────────────────────
+with tab2:
+    if not all_data:
+        st.warning("데이터가 없습니다. [데이터 관리] 탭에서 CSV 파일을 업로드해주세요.")
+        st.stop()
+
+    sel_year = st.selectbox(
+        "📅 연도 선택",
+        sorted(all_data.keys()),
+        format_func=lambda y: f"{y}년",
+        key="tab2_year",
     )
-    fig2 = px.bar(
-        rc_top, x="발생건수", y="노선", orientation="h",
-        color="노선",
-        color_discrete_map={r: c for r, c in zip(rc_top["노선"], rc_top["color"])},
-    )
-    fig2.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#8892a4"), showlegend=False,
-        yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-        xaxis=dict(gridcolor="#333"),
-        margin=dict(l=10, r=10, t=10, b=10), height=360,
-    )
-    st.plotly_chart(fig2, use_container_width=True)
 
-with col_region:
-    st.subheader("🗺️ 지역(본부)별 발생건수")
-    reg = df[df["region"] != ""].groupby("region")["count"].sum().reset_index()
-    reg.columns = ["본부", "발생건수"]
-    fig3 = px.pie(
-        reg, names="본부", values="발생건수", hole=0.4,
-        color_discrete_sequence=["#4f8ef7", "#7c5cfc", "#22c55e", "#f59e0b",
-                                  "#ef4444", "#06b6d4", "#ec4899", "#84cc16"],
-    )
-    fig3.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#8892a4"),
-        legend=dict(orientation="h", yanchor="top", y=-0.05),
-        margin=dict(l=10, r=10, t=10, b=40), height=360,
-    )
-    st.plotly_chart(fig3, use_container_width=True)
+    yr_df   = all_data[sel_year]
+    prev_yr = max((y for y in sorted(all_data.keys()) if y < sel_year), default=None)
+    prev_df = all_data.get(prev_yr) if prev_yr else None
 
-# ── Matrix ──────────────────────────────────────────────────────────────
-st.subheader("🔥 노선 × 연도 발생건수 매트릭스")
-if len(years) >= 2:
-    all_concat = pd.concat(all_data.values(), ignore_index=True)
-    matrix = all_concat.groupby(["route", "year"])["count"].sum().unstack(fill_value=0)
-    matrix.columns = [f"{c}년" for c in matrix.columns]
-    matrix["합계"] = matrix.sum(axis=1)
-    matrix = matrix.sort_values("합계", ascending=False).head(25)
-    year_cols = [c for c in matrix.columns if c != "합계"]
-    styled = (
-        matrix.style
-        .background_gradient(cmap="RdYlBu_r", subset=year_cols, vmin=0)
-        .background_gradient(cmap="Blues", subset=["합계"])
-        .format("{:.0f}")
-    )
-    st.dataframe(styled, use_container_width=True, height=460)
-else:
-    st.info("연도 데이터가 2개 이상이면 매트릭스가 표시됩니다.")
+    # KPI
+    st.subheader(f"📌 {sel_year}년 집계")
+    kpi_row(yr_df, prev_df)
+    st.divider()
 
-# ── Detail Table ────────────────────────────────────────────────────────
-st.subheader("📋 상세 데이터 테이블")
+    # 지도 + 노선 차트
+    col_m, col_c = st.columns([1.3, 0.7])
+    with col_m:
+        st.subheader("📍 지점 지도")
+        deck = make_map(yr_df)
+        if deck:
+            st.pydeck_chart(deck, use_container_width=True)
+        else:
+            st.info("지도에 표시할 위치 데이터가 없습니다.")
+    with col_c:
+        st.subheader("🛣️ 노선별 발생건수 (상위 15)")
+        st.plotly_chart(chart_route(yr_df), use_container_width=True)
 
-cf1, cf2, cf3, cf4 = st.columns([2, 1.5, 1.5, 1])
-with cf1:
-    search = st.text_input("검색", placeholder="노선·구간·방향 검색…",
-                           label_visibility="collapsed")
-with cf2:
-    region_opts = ["전체 본부"] + sorted(df["region"].dropna().unique().tolist())
-    sel_reg = st.selectbox("본부", region_opts, label_visibility="collapsed")
-with cf3:
-    route_opts = ["전체 노선"] + sorted(df["route"].dropna().unique().tolist())
-    sel_rt = st.selectbox("노선", route_opts, label_visibility="collapsed")
-with cf4:
-    min_cnt = st.number_input("최소 건수", 0, int(df["count"].max()), 0)
+    st.divider()
 
-fdf = df.copy()
-if search:
-    mask = fdf[["route", "section", "direction", "region", "branch"]].apply(
-        lambda col: col.astype(str).str.contains(search, case=False, na=False)
-    ).any(axis=1)
-    fdf = fdf[mask]
-if sel_reg != "전체 본부":
-    fdf = fdf[fdf["region"] == sel_reg]
-if sel_rt != "전체 노선":
-    fdf = fdf[fdf["route"] == sel_rt]
-if min_cnt > 0:
-    fdf = fdf[fdf["count"] >= min_cnt]
+    # 지역 파이 + 위험구간 TOP10
+    col_p, col_s = st.columns(2)
+    with col_p:
+        st.subheader("🗺️ 지역(본부)별 발생건수")
+        st.plotly_chart(chart_region(yr_df), use_container_width=True)
+    with col_s:
+        st.subheader("🔎 위험 구간 TOP 10")
+        sec = yr_df.groupby(["route","section"])["count"].sum().nlargest(10).reset_index()
+        sec["label"] = sec["route"] + " " + sec["section"]
+        fig_s = px.bar(sec, x="count", y="label", orientation="h",
+                       labels={"count":"발생건수","label":"구간"},
+                       color="count",
+                       color_continuous_scale=["#4f8ef7","#f97316","#ef4444"])
+        fig_s.update_layout(
+            paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
+            showlegend=False, coloraxis_showscale=False,
+            yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
+            xaxis=dict(gridcolor=GRID),
+            margin=dict(l=10, r=10, t=10, b=10), height=360,
+        )
+        st.plotly_chart(fig_s, use_container_width=True)
 
-disp = fdf[["year", "region", "branch", "route", "section", "direction", "count"]].rename(columns={
-    "year": "연도", "region": "본부", "branch": "지사", "route": "노선명",
-    "section": "구간", "direction": "방향", "count": "발생건수",
-})
-st.caption(f"총 {len(disp):,}건")
-st.dataframe(disp, use_container_width=True, height=380)
+    st.divider()
 
-csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-year_label = str(active_year) if active_year else "all"
-st.download_button(
-    "⬇ CSV 내보내기", data=csv_out,
-    file_name=f"roadkill_export_{year_label}.csv",
-    mime="text/csv",
-)
+    # 상세 테이블
+    st.subheader(f"📋 {sel_year}년 상세 데이터")
+    detail_table(yr_df, str(sel_year))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAB 3 : 데이터 관리
+# ─────────────────────────────────────────────────────────────────────────────
+with tab3:
+    st.subheader("⚙️ 데이터 관리")
+
+    # ── 연도 추가 ────────────────────────────────────────────────────────────
+    st.markdown("### 📂 새 연도 데이터 추가")
+    st.caption("연도를 먼저 입력하고 CSV 파일을 선택한 뒤 업로드 버튼을 눌러주세요.")
+
+    add_c1, add_c2 = st.columns([1, 3])
+    with add_c1:
+        up_year = st.number_input(
+            "연도 입력", min_value=2000, max_value=2099, value=2024, step=1,
+            help="CSV 파일에 해당하는 연도를 입력하세요.",
+            key="up_year",
+        )
+    with add_c2:
+        up_file = st.file_uploader(
+            f"{int(up_year)}년 CSV 파일 선택",
+            type=["csv"],
+            help="한국도로공사 로드킬 데이터 CSV 파일을 선택하세요.",
+            key="up_file",
+        )
+
+    if st.button("📤 업로드", type="primary", key="btn_upload"):
+        if up_file is None:
+            st.warning("⚠️ CSV 파일을 먼저 선택해주세요.")
+        else:
+            with st.spinner(f"{int(up_year)}년 데이터 처리 중…"):
+                try:
+                    raw    = up_file.read()
+                    df_new = parse_csv_bytes(raw, int(up_year))
+                    st.session_state.all_data[int(up_year)] = df_new
+                    (DATA_DIR / f"{int(up_year)}_roadkill.csv").write_bytes(raw)
+                    st.cache_data.clear()
+                    st.success(
+                        f"✅ {int(up_year)}년 데이터 {len(df_new):,}건 추가 완료! "
+                        f"다른 탭으로 이동하면 바로 반영됩니다."
+                    )
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 오류: {e}")
+
+    st.divider()
+
+    # ── 등록된 연도 목록 ─────────────────────────────────────────────────────
+    st.markdown("### 📋 현재 등록된 연도 목록")
+    if not all_data:
+        st.info("등록된 데이터가 없습니다.")
+    else:
+        summary_rows = []
+        for y in sorted(all_data.keys()):
+            ydf = all_data[y]
+            summary_rows.append({
+                "연도":          f"{y}년",
+                "총 발생건수":   f"{int(ydf['count'].sum()):,}건",
+                "구간 수":       f"{len(ydf):,}개",
+                "노선 수":       f"{ydf['route'].nunique()}개",
+                "지역(본부) 수": f"{ydf['region'].nunique()}개",
+            })
+        st.dataframe(
+            pd.DataFrame(summary_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    st.divider()
+
+    # ── 연도 삭제 ────────────────────────────────────────────────────────────
+    st.markdown("### 🗑️ 연도 데이터 삭제")
+    if not all_data:
+        st.info("삭제할 데이터가 없습니다.")
+    else:
+        del_c1, del_c2 = st.columns([3, 1])
+        with del_c1:
+            del_year = st.selectbox(
+                "삭제할 연도 선택",
+                sorted(all_data.keys()),
+                format_func=lambda y: (
+                    f"{y}년  ·  총 {int(all_data[y]['count'].sum()):,}건"
+                    f"  ·  {len(all_data[y]):,}개 구간"
+                ),
+                key="del_year_sel",
+            )
+        with del_c2:
+            st.write("")
+            st.write("")
+            if st.button("🗑️ 삭제", type="secondary",
+                         use_container_width=True, key="btn_delete"):
+                del st.session_state.all_data[del_year]
+                p = DATA_DIR / f"{del_year}_roadkill.csv"
+                if p.exists():
+                    p.unlink()
+                st.success(f"✅ {del_year}년 데이터가 삭제되었습니다.")
+                st.rerun()
