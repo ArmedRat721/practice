@@ -638,14 +638,15 @@ with tab1:
         # 노선×연도 매트릭스
         st.subheader("🔥 노선 × 연도 발생건수 매트릭스")
         if len(active_years) >= 2:
-            matrix = all_df.groupby(["route","year"])["count"].sum().unstack()
-            matrix.columns = [f"{c}년" for c in matrix.columns]
-            matrix["합계"] = matrix.sum(axis=1, skipna=True)
-            matrix = matrix.sort_values("합계", ascending=False).head(25)
-            year_cols = [c for c in matrix.columns if c != "합계"]
-            # 연도별 합계 행 추가
             import pandas as _pd
-            total_row = matrix.sum(axis=0, skipna=True).rename("연도별 합계")
+            matrix_full = all_df.groupby(["route","year"])["count"].sum().unstack()
+            matrix_full.columns = [f"{c}년" for c in matrix_full.columns]
+            matrix_full["합계"] = matrix_full.sum(axis=1, skipna=True)
+            # 연도별 합계는 전체 노선 기준으로 먼저 계산
+            total_row = matrix_full.sum(axis=0, skipna=True).rename("연도별 합계")
+            # 상위 25개 노선만 표시
+            matrix = matrix_full.sort_values("합계", ascending=False).head(25)
+            year_cols = [c for c in matrix.columns if c != "합계"]
             matrix = _pd.concat([matrix, total_row.to_frame().T])
             styled = (
                 matrix.style
