@@ -282,16 +282,29 @@ def make_map_lines(df: pd.DataFrame):
     """구간을 선(LineLayer)으로 표시. 낮음=노랑, 중간=주황, 높음=빨강.
     같은 노선·방향의 인접 지점을 km_start 순으로 연결.
     단일 지점만 있을 경우 점(ScatterplotLayer)으로 대체."""
-    need = ["lat","lng","count","route","section","direction","km_start"]
+    need = ["lat","lng","count","route","section","direction","dir_yn","km_start"]
     mdf  = df[[c for c in need if c in df.columns]].dropna(subset=["lat","lng"]).copy()
     if mdf.empty:
         return None
 
+    # dir_yn(상행선/하행선) 컬럼이 있으면 그것으로 그룹핑
+    # → 같은 노선·같은 방향을 dir_yn 기준으로 묶어 선을 올바르게 연결
+    # direction 컬럼이 터미널 도시명(서울, 부산 등)인 경우에도 정상 동작
+    group_key = "dir_yn" if "dir_yn" in mdf.columns else "direction"
+    if group_key == "dir_yn" and "direction" not in mdf.columns:
+        mdf["direction"] = ""
+
     max_c    = mdf["count"].max() or 1
     segments = []
 
-    for (route, direction), grp in mdf.groupby(["route", "direction"]):
-        grp_s = grp.sort_values("km_start").reset_index(drop=True)
+    for (route, grp_dir), grp in mdf.groupby(["route", group_key]):
+        # km_start 기준으로 정렬 후 중복 좌표 제거(같은 지점 여러 방향 행 합산)
+        grp_s = (
+            grp.groupby("km_start", as_index=False)
+               .agg({"lat":"first","lng":"first","count":"sum","section":"first","direction":"first"})
+               .sort_values("km_start")
+               .reset_index(drop=True)
+        )
         rows  = grp_s.to_dict("records")
 
         for i in range(len(rows) - 1):
@@ -304,7 +317,7 @@ def make_map_lines(df: pd.DataFrame):
                 "r": col[0], "g": col[1], "b": col[2], "a": col[3],
                 "tooltip": (
                     f"{route}  {r0['section']} → {r1['section']}\n"
-                    f"방향: {direction} | 평균 {int(avg_cnt)}건"
+                    f"{grp_dir} | 평균 {int(avg_cnt)}건"
                 ),
             })
 
