@@ -279,60 +279,37 @@ def _risk_color(norm: float):
         return [234, 179, 8,   230]   # 노랑
 
 def make_map_lines(df: pd.DataFrame):
-    """구간을 선(LineLayer)으로 표시. 낮음=노랑, 중간=주황, 높음=빨강.
-    같은 노선·방향의 인접 지점을 km_start 순으로 연결.
-    단일 지점만 있을 경우 점(ScatterplotLayer)으로 대체."""
-    need = ["lat","lng","count","route","section","direction","dir_yn","km_start"]
+    """구간을 점(ScatterplotLayer)으로 표시. 낮음=노랑, 중간=주황, 높음=빨강."""
+    need = ["lat","lng","count","route","section","dir_yn","km_start"]
     mdf  = df[[c for c in need if c in df.columns]].dropna(subset=["lat","lng"]).copy()
     if mdf.empty:
         return None
 
-    # dir_yn(상행선/하행선) 컬럼이 있으면 그것으로 그룹핑
-    # → 같은 노선·같은 방향을 dir_yn 기준으로 묶어 선을 올바르게 연결
-    # direction 컬럼이 터미널 도시명(서울, 부산 등)인 경우에도 정상 동작
-    group_key = "dir_yn" if "dir_yn" in mdf.columns else "direction"
-    if group_key == "dir_yn" and "direction" not in mdf.columns:
-        mdf["direction"] = ""
+    # dir_yn 기준으로 km_start 중복 행 합산
+    group_key = "dir_yn" if "dir_yn" in mdf.columns else "section"
+    agg_cols  = {"lat":"first","lng":"first","count":"sum","section":"first"}
+    mdf = (
+        mdf.groupby(["route", group_key, "km_start"], as_index=False)
+           .agg(agg_cols)
+    )
 
-    max_c    = mdf["count"].max() or 1
-    segments = []
+    max_c = mdf["count"].max() or 1
+    mdf["norm"]    = mdf["count"] / max_c
+    mdf["r"]       = mdf["norm"].apply(lambda n: _risk_color(n)[0])
+    mdf["g"]       = mdf["norm"].apply(lambda n: _risk_color(n)[1])
+    mdf["b"]       = mdf["norm"].apply(lambda n: _risk_color(n)[2])
+    mdf["a"]       = mdf["norm"].apply(lambda n: _risk_color(n)[3])
+    mdf["radius"]  = (mdf["norm"] * 4000 + 1500).astype(int)
+    mdf["tooltip"] = (
+        mdf["route"] + "  " + mdf["section"] + "\n"
+        + mdf[group_key] + " | " + mdf["count"].astype(str) + "건"
+    )
 
-    for (route, grp_dir), grp in mdf.groupby(["route", group_key]):
-        # km_start 기준으로 정렬 후 중복 좌표 제거(같은 지점 여러 방향 행 합산)
-        grp_s = (
-            grp.groupby("km_start", as_index=False)
-               .agg({"lat":"first","lng":"first","count":"sum","section":"first","direction":"first"})
-               .sort_values("km_start")
-               .reset_index(drop=True)
-        )
-        rows  = grp_s.to_dict("records")
-
-        for i in range(len(rows) - 1):
-            r0, r1  = rows[i], rows[i + 1]
-            avg_cnt = (r0["count"] + r1["count"]) / 2
-            col     = _risk_color(avg_cnt / max_c)
-            segments.append({
-                "start":   [r0["lng"], r0["lat"]],
-                "end":     [r1["lng"], r1["lat"]],
-                "r": col[0], "g": col[1], "b": col[2], "a": col[3],
-                "tooltip": (
-                    f"{route}  {r0['section']} → {r1['section']}\n"
-                    f"{grp_dir} | 평균 {int(avg_cnt)}건"
-                ),
-            })
-
-    # 인접 구간이 없으면(단일 점만 존재) ScatterplotLayer 로 대체
-    if not segments:
-        return make_map(df)
-
-    seg_df = pd.DataFrame(segments)
-    layer  = pdk.Layer(
-        "LineLayer", seg_df,
-        get_source_position="start",
-        get_target_position="end",
+    layer = pdk.Layer(
+        "ScatterplotLayer", mdf,
+        get_position=["lng", "lat"],
         get_color=["r", "g", "b", "a"],
-        get_width=6,
-        width_min_pixels=3,
+        get_radius="radius",
         pickable=True,
     )
     return pdk.Deck(
