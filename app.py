@@ -417,8 +417,9 @@ def _fmt_delta(diff, base, unit="건") -> str:
         return f"{s}{abs(diff):.2f}{unit} ({pct}%)"
     return f"{s}{abs(diff):,}{unit} ({pct}%)"
 
-def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None, all_years_data: dict = None):
-    """4개 KPI 카드 렌더링."""
+def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None,
+            all_years_data: dict = None, show_yearly_avg: bool = False):
+    """KPI 카드 렌더링. show_yearly_avg=True 시 연평균 발생건수 카드 추가."""
     total = int(df["count"].sum())
     avg   = round(float(df["count"].mean()), 2)
     max_c = int(df["count"].max())
@@ -435,10 +436,11 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None, all_years_data: dict
             delta_avg = _fmt_delta(round(avg - pa, 2), pa)
 
     avg_delta_total = avg_delta_avg = avg_delta_max = None
+    mean_total = None
     if all_years_data and len(all_years_data) > 1:
-        yr_totals = [int(d["count"].sum())          for d in all_years_data.values()]
-        yr_avgs   = [round(float(d["count"].mean()), 2) for d in all_years_data.values()]
-        yr_maxs   = [int(d["count"].max())           for d in all_years_data.values()]
+        yr_totals = [int(d["count"].sum())               for d in all_years_data.values()]
+        yr_avgs   = [round(float(d["count"].mean()), 2)  for d in all_years_data.values()]
+        yr_maxs   = [int(d["count"].max())               for d in all_years_data.values()]
         mean_total = round(sum(yr_totals) / len(yr_totals), 2)
         mean_avg   = round(sum(yr_avgs)   / len(yr_avgs),   2)
         mean_max   = round(sum(yr_maxs)   / len(yr_maxs),   2)
@@ -449,11 +451,19 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None, all_years_data: dict
         if mean_max:
             avg_delta_max = _fmt_delta(max_c - mean_max, mean_max)
 
-    c1, c2, c3, c4 = st.columns(4)
-    _metric_yoy(c1, "총 발생건수",        f"{total:,}건", delta_total, avg_delta_total)
-    _metric_yoy(c2, "구간 평균 발생건수", f"{avg}건",     delta_avg,   avg_delta_avg)
-    _metric_yoy(c3, "최다 발생건",        f"{max_c:,}건", None,        avg_delta_max)
-    c4.metric("최고위험 노선", top_r)
+    if show_yearly_avg and mean_total is not None:
+        c1, c2, c3, c4, c5 = st.columns(5)
+        _metric_yoy(c1, "총 발생건수",        f"{total:,}건",      delta_total, avg_delta_total)
+        c2.metric("연평균 발생건수", f"{mean_total:,.1f}건")
+        _metric_yoy(c3, "구간 평균 발생건수", f"{avg}건",           delta_avg,   avg_delta_avg)
+        _metric_yoy(c4, "최다 발생건",        f"{max_c:,}건",       None,        avg_delta_max)
+        c5.metric("최고위험 노선", top_r)
+    else:
+        c1, c2, c3, c4 = st.columns(4)
+        _metric_yoy(c1, "총 발생건수",        f"{total:,}건", delta_total, avg_delta_total)
+        _metric_yoy(c2, "구간 평균 발생건수", f"{avg}건",     delta_avg,   avg_delta_avg)
+        _metric_yoy(c3, "최다 발생건",        f"{max_c:,}건", None,        avg_delta_max)
+        c4.metric("최고위험 노선", top_r)
 
 def chart_route(df: pd.DataFrame):
     """노선별 발생건수 수평 막대."""
@@ -624,7 +634,7 @@ with tab1:
 
         # KPI - 전체 집계
         st.subheader("📌 전체 집계")
-        kpi_row(all_df)
+        kpi_row(all_df, all_years_data=all_data, show_yearly_avg=True)
         st.divider()
 
         # 연도별 추이 (막대 + 꺾은선)
