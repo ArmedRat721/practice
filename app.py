@@ -190,9 +190,9 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
             yoy = f"{'+' if d >= 0 else ''}{d}%"
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("총 발생건수",        f"{total:,}건", yoy)
-    c2.metric("구간 평균 발생건수", f"{avg}건",      f"{len(df):,}개 구간")
+    c2.metric("구간 평균 발생건수", f"{avg}건")
     c3.metric("최다 단일구간",      f"{max_c:,}건")
-    c4.metric("최고위험 노선",      top_r,           f"{top_c:,}건")
+    c4.metric("최고위험 노선",      top_r)
 
 def chart_route(df: pd.DataFrame):
     """노선별 발생건수 수평 막대."""
@@ -274,7 +274,9 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
 # 헤더
 # ══════════════════════════════════════════════════════════════════════════════
 st.title("🦌 국내 고속도로 로드킬 데이터 대시보드")
-st.caption("데이터 출처: 한국도로공사 공공데이터 | 분석 기간: 2019 ~ 2025년")
+_min_y = min(all_data.keys()) if all_data else 2019
+_max_y = max(all_data.keys()) if all_data else "—"
+st.caption(f"데이터 출처: 한국도로공사 공공데이터 | 분석 기간: {_min_y} ~ {_max_y}년")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3개 탭
@@ -288,7 +290,16 @@ with tab1:
     if not all_data:
         st.warning("📭 데이터가 없습니다. **[데이터 관리]** 탭에서 CSV 파일을 업로드해주세요.")
     else:
-        all_df = pd.concat(all_data.values(), ignore_index=True)
+        # ── 연도 선택 필터 ──────────────────────────────────────────────────
+        sel_years_t1 = st.multiselect(
+            "🔎 비교할 연도 선택 (미선택 시 전체)",
+            options=sorted(all_data.keys()),
+            default=sorted(all_data.keys()),
+            format_func=lambda y: f"{y}년",
+            key="tab1_year_filter",
+        )
+        active_years = sorted(sel_years_t1) if sel_years_t1 else sorted(all_data.keys())
+        all_df = pd.concat([all_data[y] for y in active_years], ignore_index=True)
 
         # KPI
         st.subheader("📌 전체 집계")
@@ -297,12 +308,12 @@ with tab1:
 
         # 연도별 추이 (막대 + 꺾은선)
         st.subheader("📈 연도별 발생건수 추이")
-        if len(years) >= 2:
+        if len(active_years) >= 2:
             tdf = pd.DataFrame([
                 {"연도": str(y),
                  "총 발생건수": int(all_data[y]["count"].sum()),
                  "구간 평균":   round(float(all_data[y]["count"].mean()), 2)}
-                for y in years
+                for y in active_years
             ])
             fig_t = go.Figure()
             fig_t.add_trace(go.Bar(
@@ -342,7 +353,7 @@ with tab1:
 
         # 노선×연도 매트릭스
         st.subheader("🔥 노선 × 연도 발생건수 매트릭스")
-        if len(years) >= 2:
+        if len(active_years) >= 2:
             matrix = all_df.groupby(["route","year"])["count"].sum().unstack(fill_value=0)
             matrix.columns = [f"{c}년" for c in matrix.columns]
             matrix["합계"] = matrix.sum(axis=1)
