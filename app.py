@@ -371,13 +371,20 @@ def make_map_lines(df: pd.DataFrame, min_count: int = -1, max_count: int = 0):
 
 def _delta_html(label: str, delta_str: str) -> str:
     """작년대비/평균대비 한 줄 HTML 조각."""
-    is_up = delta_str.startswith("+")
-    color = "#ef4444" if is_up else "#22c55e"
-    arrow = "▲" if is_up else "▼"
-    num   = delta_str[1:] if delta_str[0] in ("+", "-") else delta_str
+    stripped = delta_str.lstrip("+-")
+    is_zero  = stripped.startswith("0건") or stripped.startswith("0.00건")
+    if is_zero or delta_str[0] not in ("+", "-"):
+        color = "#555"
+        arrow = ""
+        num   = delta_str
+    else:
+        is_up = delta_str.startswith("+")
+        color = "#ef4444" if is_up else "#22c55e"
+        arrow = "▲ " if is_up else "▼ "
+        num   = delta_str[1:]
     return (
         f'<p style="color:#888;font-size:0.70rem;margin:6px 0 2px 0">{label}</p>'
-        f'<p style="color:{color};font-size:0.88rem;margin:0;font-weight:600">{arrow} {num}</p>'
+        f'<p style="color:{color};font-size:0.88rem;margin:0;font-weight:600">{arrow}{num}</p>'
     )
 
 def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None):
