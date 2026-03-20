@@ -273,6 +273,15 @@ def make_map(df: pd.DataFrame):
         tooltip={"text": "{tooltip}"},
     )
 
+def _section_radius(section_str: str, default_km: int = 5) -> int:
+    """구간 문자열에서 km 길이를 추출해 반경(m) 반환. 예: ' 260~265 ' → 2500m"""
+    import re
+    m = re.search(r"(\d+\.?\d*)\s*[~～\-]\s*(\d+\.?\d*)", str(section_str))
+    if m:
+        length_km = abs(float(m.group(2)) - float(m.group(1)))
+        return max(int(length_km * 500), 500)
+    return default_km * 500
+
 def _risk_color(norm: float):
     """norm 0~1 → [R,G,B,A]. 낮음=노랑, 중간=주황, 높음=빨강."""
     if norm > 0.6:
@@ -304,7 +313,7 @@ def make_map_lines(df: pd.DataFrame, max_count: int = 0):
     mdf["g"]       = mdf["norm"].apply(lambda n: _risk_color(n)[1])
     mdf["b"]       = mdf["norm"].apply(lambda n: _risk_color(n)[2])
     mdf["a"]       = mdf["norm"].apply(lambda n: _risk_color(n)[3])
-    mdf["radius"]  = (mdf["norm"] * 4000 + 1500).astype(int)
+    mdf["radius"]  = mdf["section"].apply(_section_radius)
     mdf["tooltip"] = (
         mdf["route"] + "  " + mdf["section"] + "\n"
         + mdf[group_key] + " | " + mdf["count"].astype(str) + "건"
@@ -432,7 +441,8 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
 
     fdf = df.copy()
     if search:
-        mask = fdf[["route","section","direction","region","branch"]].apply(
+        search_cols = [c for c in ["route","section","direction","region","branch"] if c in fdf.columns]
+        mask = fdf[search_cols].apply(
             lambda col: col.astype(str).str.contains(search, case=False, na=False)
         ).any(axis=1)
         fdf = fdf[mask]
@@ -450,10 +460,13 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
             lambda row: _assign_dir_yn(row["route"], row.get("direction", "")), axis=1
         )
 
-    disp = fdf[["year","region","branch","route","section","direction","dir_yn","count"]].rename(columns={
+    want_cols  = ["year","region","branch","route","section","direction","dir_yn","count"]
+    rename_map = {
         "year":"연도","region":"본부","branch":"지사","route":"노선명",
         "section":"구간","direction":"방향","dir_yn":"상하행","count":"발생건수",
-    })
+    }
+    avail_cols = [c for c in want_cols if c in fdf.columns]
+    disp = fdf[avail_cols].rename(columns=rename_map)
     st.caption(f"총 {len(disp):,}건")
     st.dataframe(disp, use_container_width=True, height=360)
     csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
