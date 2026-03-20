@@ -294,7 +294,7 @@ def _risk_color(norm: float):
 def make_map_lines(df: pd.DataFrame, max_count: int = 0):
     """구간을 점(ScatterplotLayer)으로 표시. 낮음=노랑, 중간=주황, 높음=빨강.
     max_count: 색상 정규화 기준 최댓값 (0이면 df 내 최댓값 사용)"""
-    need = ["lat","lng","count","route","section","dir_yn","km_start"]
+    need = ["lat","lng","count","route","section","direction","dir_yn","km_start"]
     mdf  = df[[c for c in need if c in df.columns]].dropna(subset=["lat","lng"]).copy()
     if mdf.empty:
         return None
@@ -302,6 +302,8 @@ def make_map_lines(df: pd.DataFrame, max_count: int = 0):
     # dir_yn 기준으로 km_start 중복 행 합산
     group_key = "dir_yn" if "dir_yn" in mdf.columns else "section"
     agg_cols  = {"lat":"first","lng":"first","count":"sum","section":"first"}
+    if "direction" in mdf.columns:
+        agg_cols["direction"] = "first"
     mdf = (
         mdf.groupby(["route", group_key, "km_start"], as_index=False)
            .agg(agg_cols)
@@ -314,9 +316,10 @@ def make_map_lines(df: pd.DataFrame, max_count: int = 0):
     mdf["b"]       = mdf["norm"].apply(lambda n: _risk_color(n)[2])
     mdf["a"]       = mdf["norm"].apply(lambda n: _risk_color(n)[3])
     mdf["radius"]  = mdf["section"].apply(_section_radius)
+    dir_col = mdf["direction"].astype(str) if "direction" in mdf.columns else mdf["section"].astype(str)
     mdf["tooltip"] = (
         mdf["route"] + "  " + mdf["section"] + "\n"
-        + mdf[group_key] + " | " + mdf["count"].astype(str) + "건"
+        + "방향: " + dir_col + " | " + mdf["count"].astype(str) + "건"
     )
 
     layer = pdk.Layer(
@@ -422,13 +425,6 @@ def chart_region(df: pd.DataFrame):
 
 def detail_table(df: pd.DataFrame, key_prefix: str):
     """검색·필터(연쇄)·테이블·CSV 다운로드 블록."""
-    # dir_yn 컬럼이 없는 구버전 캐시 데이터 호환
-    if "dir_yn" not in df.columns:
-        df = df.copy()
-        df["dir_yn"] = df.apply(
-            lambda row: _assign_dir_yn(row["route"], row.get("direction", "")), axis=1
-        )
-
     # ── 필터 헤더 라벨 ────────────────────────────────────────────────
     lc1, lc2, lc3, lc4, lc5 = st.columns([2, 1.4, 1.4, 1.4, 1])
     lc1.caption("검색")
@@ -464,9 +460,6 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
         rt_opts = ["전체 노선"] + sorted(tmp_br["route"].dropna().unique().tolist())
         sel_rt  = st.selectbox("노선", rt_opts, label_visibility="collapsed",
                                key=f"{key_prefix}_rt")
-
-    # 본부+지사+노선 → 상하행 연쇄
-    tmp_rt = tmp_br if sel_rt == "전체 노선" else tmp_br[tmp_br["route"] == sel_rt]
 
     with cf5:
         min_cnt = st.number_input("최소 건수", 0, int(df["count"].max()), 0,
