@@ -381,15 +381,21 @@ def _delta_html(label: str, delta_str: str) -> str:
     )
 
 def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None):
-    """커스텀 KPI 카드. delta_str=작년대비, avg_delta_str=평균대비."""
+    """커스텀 KPI 카드. delta_str=작년대비, avg_delta_str=평균대비 (평균대비가 왼쪽)."""
     if delta_str is None and avg_delta_str is None:
         col.metric(label, value)
         return
-    inner = ""
-    if delta_str is not None:
-        inner += _delta_html("작년대비", delta_str)
-    if avg_delta_str is not None:
-        inner += _delta_html("평균대비", avg_delta_str)
+    # 평균대비(왼) | 작년대비(오) 2열 레이아웃
+    left  = _delta_html("평균대비", avg_delta_str) if avg_delta_str is not None else ""
+    right = _delta_html("작년대비", delta_str)     if delta_str     is not None else ""
+    if left and right:
+        inner = (
+            f'<div style="display:flex;gap:16px;margin-top:4px">'
+            f'<div>{left}</div><div>{right}</div>'
+            f'</div>'
+        )
+    else:
+        inner = left or right
     col.markdown(f"""
 <div style="background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb">
   <p style="color:#555;font-size:0.82rem;margin:0 0 6px 0;font-weight:500">{label}</p>
