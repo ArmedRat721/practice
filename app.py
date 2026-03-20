@@ -313,6 +313,9 @@ def chart_route(df: pd.DataFrame):
     fig = px.bar(rc, x="발생건수", y="노선", orientation="h",
                  color="노선",
                  color_discrete_map={r: c for r, c in zip(rc["노선"], rc["color"])})
+    fig.update_traces(
+        hovertemplate="노선: %{y}<br>발생건수: %{x:,}건<extra></extra>"
+    )
     fig.update_layout(
         paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
         showlegend=False,
@@ -328,6 +331,9 @@ def chart_region(df: pd.DataFrame):
     reg.columns = ["본부","발생건수"]
     fig = px.pie(reg, names="본부", values="발생건수", hole=0.4,
                  color_discrete_sequence=PALETTE)
+    fig.update_traces(
+        hovertemplate="본부: %{label}<br>발생건수: %{value:,}건<br>비율: %{percent}<extra></extra>"
+    )
     fig.update_layout(
         paper_bgcolor=DARK_BG, font=FONT,
         legend=dict(orientation="h", yanchor="top", y=-0.05),
@@ -435,12 +441,14 @@ with tab1:
             fig_t.add_trace(go.Bar(
                 x=tdf["연도"], y=tdf["총 발생건수"], name="총 발생건수",
                 marker_color="#ef4444", opacity=0.85, yaxis="y1",
+                hovertemplate="<b>총 발생건수</b><br>연도: %{x}<br>건수: %{y:,}건<extra></extra>",
             ))
             fig_t.add_trace(go.Scatter(
                 x=tdf["연도"], y=tdf["구간 평균"], name="구간 평균",
                 mode="lines+markers",
                 line=dict(color="#4f8ef7", width=2, dash="dot"),
                 marker=dict(size=8), yaxis="y2",
+                hovertemplate="<b>구간 평균</b><br>연도: %{x}<br>평균: %{y:.2f}건<extra></extra>",
             ))
             fig_t.update_layout(
                 paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
@@ -578,6 +586,9 @@ with tab2:
                            labels={"count":"발생건수","label":"구간"},
                            color="count",
                            color_continuous_scale=["#4f8ef7","#f97316","#ef4444"])
+            fig_s.update_traces(
+                hovertemplate="구간: %{y}<br>발생건수: %{x:,}건<extra></extra>"
+            )
             fig_s.update_layout(
                 paper_bgcolor=DARK_BG, plot_bgcolor=DARK_BG, font=FONT,
                 showlegend=False, coloraxis_showscale=False,
@@ -619,24 +630,55 @@ with tab3:
             key="up_file",
         )
 
+    # ── 업로드 실행 함수 ────────────────────────────────────────────────────
+    def _do_upload(year: int, raw: bytes):
+        df_new = parse_csv_bytes(raw, year)
+        st.session_state.all_data[year] = df_new
+        (DATA_DIR / f"{year}_roadkill.csv").write_bytes(raw)
+        st.cache_data.clear()
+        st.session_state.pop("confirm_overwrite", None)
+        st.session_state.pop("pending_year",      None)
+        st.session_state.pop("pending_bytes",     None)
+        st.success(f"✅ {year}년 데이터 {len(df_new):,}건 추가 완료! 다른 탭으로 이동하면 바로 반영됩니다.")
+        st.rerun()
+
     if st.button("📤 업로드", type="primary", key="btn_upload"):
         if up_file is None:
             st.warning("⚠️ CSV 파일을 먼저 선택해주세요.")
+        elif int(up_year) in all_data:
+            # 이미 존재 → 바이트 저장 후 확인 요청
+            st.session_state["pending_year"]      = int(up_year)
+            st.session_state["pending_bytes"]     = up_file.read()
+            st.session_state["confirm_overwrite"] = True
         else:
             with st.spinner(f"{int(up_year)}년 데이터 처리 중…"):
                 try:
-                    raw    = up_file.read()
-                    df_new = parse_csv_bytes(raw, int(up_year))
-                    st.session_state.all_data[int(up_year)] = df_new
-                    (DATA_DIR / f"{int(up_year)}_roadkill.csv").write_bytes(raw)
-                    st.cache_data.clear()
-                    st.success(
-                        f"✅ {int(up_year)}년 데이터 {len(df_new):,}건 추가 완료! "
-                        f"다른 탭으로 이동하면 바로 반영됩니다."
-                    )
-                    st.rerun()
+                    _do_upload(int(up_year), up_file.read())
                 except Exception as e:
                     st.error(f"❌ 오류: {e}")
+
+    # ── 중복 연도 덮어쓰기 확인 알림 ────────────────────────────────────────
+    if st.session_state.get("confirm_overwrite"):
+        dup_y = st.session_state["pending_year"]
+        st.warning(
+            f"⚠️ **{dup_y}년** 데이터가 이미 추가되어 있습니다.  \n"
+            f"정말 덮어쓰시겠습니까?"
+        )
+        btn_yes, btn_no = st.columns([1, 1])
+        with btn_yes:
+            if st.button("✅ 예, 덮어쓰기", type="primary",
+                         use_container_width=True, key="btn_overwrite_yes"):
+                with st.spinner(f"{dup_y}년 데이터 덮어쓰기 중…"):
+                    try:
+                        _do_upload(dup_y, st.session_state["pending_bytes"])
+                    except Exception as e:
+                        st.error(f"❌ 오류: {e}")
+        with btn_no:
+            if st.button("❌ 취소", use_container_width=True, key="btn_overwrite_no"):
+                st.session_state.pop("confirm_overwrite", None)
+                st.session_state.pop("pending_year",      None)
+                st.session_state.pop("pending_bytes",     None)
+                st.rerun()
 
     st.divider()
 
