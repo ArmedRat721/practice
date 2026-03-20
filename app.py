@@ -522,6 +522,10 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
     }
     avail_cols = [c for c in want_cols if c in fdf.columns]
     disp = fdf[avail_cols].rename(columns=rename_map)
+    if "연도" in disp.columns:
+        disp["연도"] = disp["연도"].astype(str) + "년"
+    if "발생건수" in disp.columns:
+        disp["발생건수"] = disp["발생건수"].astype(str) + "건"
     disp.index = range(1, len(disp) + 1)
     styled = (
         disp.style
