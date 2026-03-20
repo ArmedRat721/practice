@@ -53,6 +53,8 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
             col_map[c] = "route"
         elif "구간" in c:
             col_map[c] = "section"
+        elif "상하행" in c:
+            col_map[c] = "dir_yn"
         elif "방향" in c:
             col_map[c] = "direction"
         elif "5km" in c.lower() or "시점" in c:
@@ -141,7 +143,10 @@ def parse_csv_bytes(data: bytes, year: int) -> pd.DataFrame:
 
     df = normalize_df(df)
 
-    required = ["region", "route", "section", "direction", "count", "lat", "lng"]
+    # direction(방향) 컬럼은 상하행 컬럼이 있으면 필수 아님
+    required = ["region", "route", "section", "count", "lat", "lng"]
+    if "dir_yn" not in df.columns:          # 상하행 컬럼 없으면 방향 필수
+        required.append("direction")
     missing  = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"컬럼 인식 실패: {missing}\n인식된 컬럼: {list(df.columns)}")
@@ -166,9 +171,18 @@ def parse_csv_bytes(data: bytes, year: int) -> pd.DataFrame:
             df[col] = ""
 
     # ── 상하행 컬럼 생성 ──────────────────────────────────────────────
-    df["dir_yn"] = df.apply(
-        lambda r: _assign_dir_yn(r["route"], r["direction"]), axis=1
-    )
+    # CSV에 상하행 컬럼이 있으면 직접 사용, 없으면 노선명·방향으로 자동 판별
+    if "dir_yn" in df.columns:
+        # CSV 값: "상행"/"하행" → 내부 표준값: "상행선"/"하행선"/"미분류"
+        df["dir_yn"] = (
+            df["dir_yn"].fillna("").astype(str).str.strip()
+            .map({"상행": "상행선", "하행": "하행선"})
+            .fillna("미분류")
+        )
+    else:
+        df["dir_yn"] = df.apply(
+            lambda r: _assign_dir_yn(r["route"], r["direction"]), axis=1
+        )
 
     return df[["year", "region", "branch", "route", "section",
                "direction", "dir_yn", "km_start", "count", "lat", "lng"]].reset_index(drop=True)
