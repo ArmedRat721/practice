@@ -411,11 +411,11 @@ def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None)
 </div>""", unsafe_allow_html=True)
 
 def _fmt_delta(diff, base, unit="건") -> str:
-    s = "+" if diff >= 0 else ""
-    pct = round(diff / base * 100, 1) if base else 0
+    s = "+" if diff >= 0 else "-"
+    pct = abs(round(diff / base * 100, 1)) if base else 0
     if isinstance(diff, float):
-        return f"{s}{diff:.2f}{unit} ({s}{pct}%)"
-    return f"{s}{diff:,}{unit} ({s}{pct}%)"
+        return f"{s}{abs(diff):.2f}{unit} ({pct}%)"
+    return f"{s}{abs(diff):,}{unit} ({pct}%)"
 
 def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None, all_years_data: dict = None):
     """4개 KPI 카드 렌더링."""
