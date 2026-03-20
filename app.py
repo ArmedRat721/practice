@@ -2,15 +2,75 @@ import streamlit as st
 import pandas as pd
 import chardet
 import re
+import base64
+import io as _io
 import plotly.express as px
 import plotly.graph_objects as go
 import pydeck as pdk
 from io import BytesIO
 from pathlib import Path
+from PIL import Image, ImageDraw
+
+
+def _build_sign_image(size: int = 128) -> Image.Image:
+    """야생동물주의 도로 표지판 PIL 이미지 생성 (마름모 + 사슴 실루엣)."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    h = size // 2
+    m = max(3, size // 20)
+    s = size / 128  # 좌표 스케일
+
+    # 마름모 배경 (노랑)
+    pts = [(h, m), (size - m, h), (h, size - m), (m, h)]
+    draw.polygon(pts, fill="#FFCC00")
+    # 테두리
+    bw = max(3, size // 32)
+    for i in range(len(pts)):
+        draw.line([pts[i], pts[(i + 1) % len(pts)]], fill="#222222", width=bw)
+
+    # 몸통
+    draw.ellipse([int(40*s), int(68*s), int(88*s), int(90*s)], fill="#222222")
+    # 목
+    draw.polygon([
+        (int(58*s), int(52*s)), (int(70*s), int(52*s)),
+        (int(72*s), int(70*s)), (int(56*s), int(70*s)),
+    ], fill="#222222")
+    # 머리
+    draw.ellipse([int(50*s), int(38*s), int(78*s), int(57*s)], fill="#222222")
+    # 코 (살짝 돌출)
+    draw.ellipse([int(70*s), int(48*s), int(82*s), int(58*s)], fill="#222222")
+    # 다리 4개
+    for lx in [44, 53, 63, 72]:
+        draw.rounded_rectangle(
+            [int(lx*s), int(87*s), int((lx+6)*s), int(112*s)],
+            radius=int(2*s), fill="#222222"
+        )
+    # 꼬리
+    draw.ellipse([int(84*s), int(64*s), int(94*s), int(76*s)], fill="#222222")
+    # 뿔 왼쪽
+    lw = max(2, int(3*s))
+    draw.line([(int(58*s), int(42*s)), (int(47*s), int(25*s))], fill="#222222", width=lw)
+    draw.line([(int(47*s), int(25*s)), (int(40*s), int(16*s))], fill="#222222", width=lw)
+    draw.line([(int(47*s), int(25*s)), (int(43*s), int(31*s))], fill="#222222", width=lw)
+    # 뿔 오른쪽
+    draw.line([(int(70*s), int(42*s)), (int(81*s), int(25*s))], fill="#222222", width=lw)
+    draw.line([(int(81*s), int(25*s)), (int(88*s), int(16*s))], fill="#222222", width=lw)
+    draw.line([(int(81*s), int(25*s)), (int(85*s), int(31*s))], fill="#222222", width=lw)
+
+    return img
+
+
+def _sign_b64(size: int = 52) -> str:
+    """제목용 base64 PNG 문자열."""
+    img = _build_sign_image(size)
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
 
 st.set_page_config(
     page_title="국내 고속도로 로드킬 데이터 대시보드",
-    page_icon="🦌",
+    page_icon=_build_sign_image(64),
     layout="wide",
 )
 
@@ -546,7 +606,14 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
 # ══════════════════════════════════════════════════════════════════════════════
 # 헤더
 # ══════════════════════════════════════════════════════════════════════════════
-st.title("🦌 국내 고속도로 로드킬 데이터 대시보드")
+_title_b64 = _sign_b64(52)
+st.markdown(
+    f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:0.5rem">'
+    f'<img src="data:image/png;base64,{_title_b64}" style="width:52px;height:52px">'
+    f'<span style="font-size:2rem;font-weight:700">국내 고속도로 로드킬 데이터 대시보드</span>'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 _min_y = min(all_data.keys()) if all_data else 2019
 _max_y = max(all_data.keys()) if all_data else "—"
 st.caption(f"데이터 출처: 한국도로공사 공공데이터 | 분석 기간: {_min_y} ~ {_max_y}년")
