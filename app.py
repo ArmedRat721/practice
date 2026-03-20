@@ -283,16 +283,16 @@ def _section_radius(section_str: str, default_km: int = 5) -> int:
     return default_km * 500
 
 def _risk_color(norm: float):
-    """norm 0~1 → [R,G,B,A]. 낮음=노랑, 중간=주황, 높음=빨강."""
+    """norm 0~1 → [R,G,B,A]. 낮음=초록, 중간=노랑, 높음=빨강."""
     if norm > 0.6:
         return [239, 68,  68,  230]   # 빨강
     elif norm > 0.3:
-        return [249, 115, 22,  230]   # 주황
-    else:
         return [234, 179, 8,   230]   # 노랑
+    else:
+        return [34,  197, 94,  230]   # 초록
 
 def make_map_lines(df: pd.DataFrame, max_count: int = 0):
-    """구간을 점(ScatterplotLayer)으로 표시. 낮음=노랑, 중간=주황, 높음=빨강.
+    """구간을 점(ScatterplotLayer)으로 표시. 낮음=초록, 중간=노랑, 높음=빨강.
     max_count: 색상 정규화 기준 최댓값 (0이면 df 내 최댓값 사용)"""
     need = ["lat","lng","count","route","section","direction","dir_yn","km_start"]
     mdf  = df[[c for c in need if c in df.columns]].dropna(subset=["lat","lng"]).copy()
@@ -706,8 +706,8 @@ with tab2:
         st.markdown("""
 <div style="font-size:0.78rem;color:#8892a4;margin-top:4px">
   <b>색상 기준</b> &nbsp;|&nbsp;
-  <span style="background:#eab308;color:#111;padding:1px 8px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
-  <span style="background:#f97316;color:white;padding:1px 8px;border-radius:3px">■ 중간</span>&nbsp;→&nbsp;
+  <span style="background:#22c55e;color:#111;padding:1px 8px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
+  <span style="background:#eab308;color:#111;padding:1px 8px;border-radius:3px">■ 중간</span>&nbsp;→&nbsp;
   <span style="background:#ef4444;color:white;padding:1px 8px;border-radius:3px">■ 높음</span>
   &nbsp;(해당 연도 최고 발생건수 기준)
 </div>""", unsafe_allow_html=True)
