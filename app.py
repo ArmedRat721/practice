@@ -703,23 +703,11 @@ with tab2:
         detail_table(yr_df, str(sel_year))
 
         yr_max = int(yr_df["count"].max()) if not yr_df.empty else 1
-        map_up = yr_df[yr_df["dir_yn"] == "상행선"]
-        map_dn = yr_df[yr_df["dir_yn"] == "하행선"]
-        col_up, col_dn = st.columns(2)
-        with col_up:
-            st.markdown("**상행선**")
-            deck_up = make_map_lines(map_up, yr_max)
-            if deck_up:
-                st.pydeck_chart(deck_up, use_container_width=True, key="tab2_map_up")
-            else:
-                st.info("상행선 데이터가 없습니다.")
-        with col_dn:
-            st.markdown("**하행선**")
-            deck_dn = make_map_lines(map_dn, yr_max)
-            if deck_dn:
-                st.pydeck_chart(deck_dn, use_container_width=True, key="tab2_map_dn")
-            else:
-                st.info("하행선 데이터가 없습니다.")
+        deck_all = make_map_lines(yr_df, yr_max)
+        if deck_all:
+            st.pydeck_chart(deck_all, use_container_width=True, key="tab2_map_all")
+        else:
+            st.info("지도에 표시할 데이터가 없습니다.")
         st.markdown("""
 <div style="font-size:0.78rem;color:#8892a4;margin-top:4px">
   <b>색상 기준</b> &nbsp;|&nbsp;
