@@ -99,8 +99,13 @@ def parse_csv_bytes(data: bytes, year: int) -> pd.DataFrame:
         else:
             df[col] = ""
 
+    # ── 상하행 컬럼 생성 ──────────────────────────────────────────────
+    df["dir_yn"] = df.apply(
+        lambda r: _assign_dir_yn(r["route"], r["direction"]), axis=1
+    )
+
     return df[["year", "region", "branch", "route", "section",
-               "direction", "km_start", "count", "lat", "lng"]].reset_index(drop=True)
+               "direction", "dir_yn", "km_start", "count", "lat", "lng"]].reset_index(drop=True)
 
 @st.cache_data(show_spinner=False)
 def load_all_preset() -> dict:
@@ -142,25 +147,72 @@ PALETTE = ["#4f8ef7","#7c5cfc","#22c55e","#f59e0b",
            "#ef4444","#06b6d4","#ec4899","#84cc16"]
 
 # ── 공통 함수 ──────────────────────────────────────────────────────────────────
-def classify_direction(route: str) -> str:
-    """노선명(route)에 포함된 방향 키워드로 상행선/하행선을 분류.
+def _assign_dir_yn(route: str, direction: str = "") -> str:
+    """노선명(route)·방향(direction) 컬럼을 기반으로 상행선/하행선/미분류 판정.
 
-    상행선 (서울·기점 방향):
-      - (상행): 명시적 상행 표기
-      - (북향): 북쪽 = 서울 방향
-      - (서향): 서쪽 = 서울 방향 (영동선 등)
+    ── 1순위: 노선명에 명시된 방향 키워드 ──────────────────────────────
+      상행선: (상행) / (북향) / (서향)
+      하행선: (하행) / (남향) / (동향)
 
-    하행선 (지방·종점 방향):
-      - (하행): 명시적 하행 표기
-      - (남향): 남쪽 = 지방 방향
-      - (동향): 동쪽 = 지방 방향 (영동선 등)
+    ── 2순위: 노선별 종점 키워드 테이블 ────────────────────────────────
+    direction 컬럼(노선 유형 식별자)으로 노선을 특정한 뒤,
+    route 컬럼에 해당 노선의 상행·하행 종점 키워드가 포함되어 있으면 판별.
+
+    ── 결과값 ───────────────────────────────────────────────────────────
+      '상행선' | '하행선' | '미분류'
     """
-    r = str(route)
+    r = str(route).strip()
+    d = str(direction).strip()
+
+    # ── 1순위: 노선명 방향 키워드 ─────────────────────────────────────
     if any(kw in r for kw in ("상행", "북향", "서향")):
         return "상행선"
     if any(kw in r for kw in ("하행", "남향", "동향")):
         return "하행선"
-    return "기타"
+
+    # ── 2순위: 노선별 종점 키워드 테이블 ─────────────────────────────
+    # (direction 컬럼 매칭 키워드) → (상행 종점 키워드 목록, 하행 종점 키워드 목록)
+    ROUTE_TABLE = [
+        # direction 매칭 키워드,   상행(기점) 종점,         하행(종점) 종점
+        (["경부"],                 ["서울"],                 ["부산"]),
+        (["남해"],                 ["순천"],                 ["부산"]),
+        (["영동"],                 ["인천"],                 ["강릉"]),
+        (["경춘"],                 ["서울"],                 ["춘천"]),
+        (["중부내륙"],             ["양평"],                 ["창원"]),
+        (["중부"],                 ["하남"],                 ["통영"]),
+        (["호남지선"],             ["회덕", "대전"],         ["논산"]),
+        (["호남"],                 ["천안"],                 ["순천", "목포"]),
+        (["서해"],                 ["서울"],                 ["목포"]),
+        (["동해"],                 ["근덕"],                 ["속초"]),
+        (["중앙"],                 ["춘천"],                 ["부산"]),
+        (["대호", "당진대전",
+          "서산영덕"],             ["당진"],                 ["대전"]),
+        (["평택제천"],             ["평택"],                 ["제천"]),
+        (["순천완주"],             ["완주"],                 ["순천"]),
+        (["광주대구"],             ["광주"],                 ["대구"]),
+        (["무안광주"],             ["광주"],                 ["무안"]),
+        (["청주상주"],             ["청주"],                 ["상주"]),
+        (["서천공주"],             ["공주"],                 ["서천"]),
+        (["청주영덕"],             ["청주"],                 ["영덕"]),
+        (["새만금포항", "새만금"], ["익산"],                 ["장수", "포항"]),
+        (["당진영덕"],             [],                       ["영덕"]),
+        (["대구포항"],             [],                       ["대구", "포항"]),
+        (["수도권제1순환",
+          "수도권"],               ["판교"],                 ["일산"]),
+        (["대전남부순환",
+          "대전남부"],             ["산내"],                 ["서대전"]),
+        (["통영대구"],             ["대구"],                 ["통영"]),
+    ]
+
+    for dir_keys, up_kws, down_kws in ROUTE_TABLE:
+        # direction 컬럼 or route 컬럼에 노선 식별 키워드가 포함되면
+        if any(k in d for k in dir_keys) or any(k in r for k in dir_keys):
+            if up_kws and any(kw in r for kw in up_kws):
+                return "상행선"
+            if down_kws and any(kw in r for kw in down_kws):
+                return "하행선"
+
+    return "미분류"
 
 def make_map(df: pd.DataFrame):
     """PyDeck ScatterplotLayer 반환. 데이터 없으면 None."""
@@ -373,9 +425,9 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
     if min_cnt > 0:
         fdf = fdf[fdf["count"] >= min_cnt]
 
-    disp = fdf[["year","region","branch","route","section","direction","count"]].rename(columns={
+    disp = fdf[["year","region","branch","route","section","direction","dir_yn","count"]].rename(columns={
         "year":"연도","region":"본부","branch":"지사","route":"노선명",
-        "section":"구간","direction":"방향","count":"발생건수",
+        "section":"구간","direction":"방향","dir_yn":"상하행","count":"발생건수",
     })
     st.caption(f"총 {len(disp):,}건")
     st.dataframe(disp, use_container_width=True, height=360)
@@ -536,13 +588,10 @@ with tab2:
         kpi_row(yr_df, prev_df)
         st.divider()
 
-        # 지도 — 상행선 / 하행선 분리
-        # 노선명(route)의 방향 키워드로 분류: classify_direction() 참조
+        # 지도 — 상행선 / 하행선 분리 (parse_csv_bytes에서 생성된 dir_yn 컬럼 사용)
         st.subheader("📍 지점 지도")
-        yr_df_dir = yr_df.copy()
-        yr_df_dir["dir_class"] = yr_df_dir["route"].apply(classify_direction)
-        map_up = yr_df_dir[yr_df_dir["dir_class"] == "상행선"]
-        map_dn = yr_df_dir[yr_df_dir["dir_class"] == "하행선"]
+        map_up = yr_df[yr_df["dir_yn"] == "상행선"]
+        map_dn = yr_df[yr_df["dir_yn"] == "하행선"]
         col_up, col_dn = st.columns(2)
         with col_up:
             st.markdown("**상행선**")
