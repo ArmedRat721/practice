@@ -645,7 +645,7 @@ with tab1:
             styled = (
                 matrix.style
                 .background_gradient(cmap="RdYlBu_r", subset=year_cols, vmin=0)
-                .background_gradient(cmap="Blues",    subset=["합계"])
+                .background_gradient(cmap="Oranges",  subset=["합계"])
                 .format("{:.0f}")
             )
             st.dataframe(styled, use_container_width=True, height=460)
@@ -658,8 +658,8 @@ with tab1:
   <span style="background:#d73027;color:white;padding:1px 6px;border-radius:3px">■ 높음</span>
   &emsp;
   <b>합계 컬럼:</b>&nbsp;
-  <span style="background:#deebf7;color:#333;padding:1px 6px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
-  <span style="background:#08519c;color:white;padding:1px 6px;border-radius:3px">■ 높음</span>
+  <span style="background:#fdd0a2;color:#333;padding:1px 6px;border-radius:3px">■ 낮음</span>&nbsp;→&nbsp;
+  <span style="background:#8c2d04;color:white;padding:1px 6px;border-radius:3px">■ 높음</span>
   &emsp; (노선별 누적 발생건수 기준)
 </div>""", unsafe_allow_html=True)
         else:
