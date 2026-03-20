@@ -421,8 +421,25 @@ def chart_region(df: pd.DataFrame):
     return fig
 
 def detail_table(df: pd.DataFrame, key_prefix: str):
-    """검색·필터·테이블·CSV 다운로드 블록."""
-    cf1, cf2, cf3, cf4 = st.columns([2, 1.5, 1.5, 1])
+    """검색·필터(연쇄)·테이블·CSV 다운로드 블록."""
+    # dir_yn 컬럼이 없는 구버전 캐시 데이터 호환
+    if "dir_yn" not in df.columns:
+        df = df.copy()
+        df["dir_yn"] = df.apply(
+            lambda row: _assign_dir_yn(row["route"], row.get("direction", "")), axis=1
+        )
+
+    # ── 필터 헤더 라벨 ────────────────────────────────────────────────
+    lc1, lc2, lc3, lc4, lc5, lc6 = st.columns([2, 1.4, 1.4, 1.4, 1.2, 1])
+    lc1.caption("검색")
+    lc2.caption("본부")
+    lc3.caption("지사")
+    lc4.caption("노선")
+    lc5.caption("상하행")
+    lc6.caption("최소 건수")
+
+    cf1, cf2, cf3, cf4, cf5, cf6 = st.columns([2, 1.4, 1.4, 1.4, 1.2, 1])
+
     with cf1:
         search = st.text_input("검색", placeholder="노선·구간·방향 검색…",
                                label_visibility="collapsed",
@@ -431,14 +448,39 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
         reg_opts = ["전체 본부"] + sorted(df["region"].dropna().unique().tolist())
         sel_reg  = st.selectbox("본부", reg_opts, label_visibility="collapsed",
                                 key=f"{key_prefix}_reg")
+
+    # 본부 → 지사 연쇄
+    tmp_reg = df if sel_reg == "전체 본부" else df[df["region"] == sel_reg]
+
     with cf3:
-        rt_opts = ["전체 노선"] + sorted(df["route"].dropna().unique().tolist())
+        br_list = sorted(tmp_reg["branch"].dropna().unique().tolist()) if "branch" in tmp_reg.columns else []
+        br_opts = ["전체 지사"] + br_list
+        sel_br  = st.selectbox("지사", br_opts, label_visibility="collapsed",
+                               key=f"{key_prefix}_br")
+
+    # 본부+지사 → 노선 연쇄
+    tmp_br = tmp_reg if sel_br == "전체 지사" else tmp_reg[tmp_reg["branch"] == sel_br]
+
+    with cf4:
+        rt_opts = ["전체 노선"] + sorted(tmp_br["route"].dropna().unique().tolist())
         sel_rt  = st.selectbox("노선", rt_opts, label_visibility="collapsed",
                                key=f"{key_prefix}_rt")
-    with cf4:
+
+    # 본부+지사+노선 → 상하행 연쇄
+    tmp_rt = tmp_br if sel_rt == "전체 노선" else tmp_br[tmp_br["route"] == sel_rt]
+
+    with cf5:
+        dir_list = sorted(tmp_rt["dir_yn"].dropna().unique().tolist()) if "dir_yn" in tmp_rt.columns else []
+        dir_opts = ["전체"] + dir_list
+        sel_dir  = st.selectbox("상하행", dir_opts, label_visibility="collapsed",
+                                key=f"{key_prefix}_dir")
+
+    with cf6:
         min_cnt = st.number_input("최소 건수", 0, int(df["count"].max()), 0,
+                                  label_visibility="collapsed",
                                   key=f"{key_prefix}_cnt")
 
+    # ── 필터 적용 ─────────────────────────────────────────────────────
     fdf = df.copy()
     if search:
         search_cols = [c for c in ["route","section","direction","region","branch"] if c in fdf.columns]
@@ -448,17 +490,14 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
         fdf = fdf[mask]
     if sel_reg != "전체 본부":
         fdf = fdf[fdf["region"] == sel_reg]
+    if sel_br != "전체 지사":
+        fdf = fdf[fdf["branch"] == sel_br]
     if sel_rt != "전체 노선":
         fdf = fdf[fdf["route"] == sel_rt]
+    if sel_dir != "전체":
+        fdf = fdf[fdf["dir_yn"] == sel_dir]
     if min_cnt > 0:
         fdf = fdf[fdf["count"] >= min_cnt]
-
-    # dir_yn 컬럼이 없는 구버전 캐시 데이터 호환
-    if "dir_yn" not in fdf.columns:
-        fdf = fdf.copy()
-        fdf["dir_yn"] = fdf.apply(
-            lambda row: _assign_dir_yn(row["route"], row.get("direction", "")), axis=1
-        )
 
     want_cols  = ["year","region","branch","route","section","direction","dir_yn","count"]
     rename_map = {
