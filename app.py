@@ -283,13 +283,13 @@ def _section_radius(section_str: str, default_km: int = 5) -> int:
     return default_km * 500
 
 def _risk_color(norm: float):
-    """norm 0~1 → [R,G,B,A]. 낮음=초록, 중간=노랑, 높음=빨강."""
-    if norm > 0.6:
-        return [239, 68,  68,  230]   # 빨강
-    elif norm > 0.3:
-        return [234, 179, 8,   230]   # 노랑
+    """norm 0~1 → [R,G,B,A]. 최솟값(0)=초록, 최댓값(1)=빨강, 중간=노랑."""
+    if norm >= 1.0:
+        return [239, 68,  68,  230]   # 빨강 (최댓값)
+    elif norm <= 0.0:
+        return [34,  197, 94,  230]   # 초록 (최솟값)
     else:
-        return [34,  197, 94,  230]   # 초록
+        return [234, 179, 8,   230]   # 노랑 (중간)
 
 def make_map_lines(df: pd.DataFrame, min_count: int = -1, max_count: int = 0):
     """구간을 점(ScatterplotLayer)으로 표시. 최솟값=초록, 중간=노랑, 최댓값=빨강.
