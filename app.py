@@ -643,13 +643,13 @@ with tab1:
             matrix["합계"] = matrix.sum(axis=1, skipna=True)
             matrix = matrix.sort_values("합계", ascending=False).head(25)
             year_cols = [c for c in matrix.columns if c != "합계"]
+            import pandas as _pd
             styled = (
                 matrix.style
                 .background_gradient(cmap="RdYlBu_r", subset=year_cols, vmin=0)
                 .background_gradient(cmap="Oranges",  subset=["합계"])
                 .highlight_null(color="white")
-                .format("{:.0f}", na_rep="-", subset=year_cols)
-                .format("{:.0f}", subset=["합계"])
+                .format(lambda v: "-" if _pd.isna(v) else f"{v:.0f}")
             )
             st.dataframe(styled, use_container_width=True, height=460)
             st.markdown("""
