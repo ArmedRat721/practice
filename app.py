@@ -174,6 +174,23 @@ def make_map(df: pd.DataFrame):
         tooltip={"text": "{tooltip}"},
     )
 
+def _metric_yoy(col, label: str, value: str, delta_str=None):
+    """'작년대비' 라벨을 delta 위에 표시하는 커스텀 KPI 카드."""
+    if delta_str is None:
+        col.metric(label, value)
+        return
+    is_up  = delta_str.startswith("+")
+    color  = "#ef4444" if is_up else "#22c55e"
+    arrow  = "▲" if is_up else "▼"
+    num    = delta_str[1:] if delta_str[0] in ("+", "-") else delta_str
+    col.markdown(f"""
+<div style="padding:6px 0 10px">
+  <p style="color:#8892a4;font-size:0.85rem;margin:0 0 4px 0">{label}</p>
+  <p style="color:white;font-size:2.1rem;font-weight:700;margin:0 0 8px 0;line-height:1">{value}</p>
+  <p style="color:#8892a4;font-size:0.72rem;margin:0 0 2px 0">작년대비</p>
+  <p style="color:{color};font-size:0.88rem;margin:0">{arrow} {num}</p>
+</div>""", unsafe_allow_html=True)
+
 def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
     """4개 KPI 카드 렌더링."""
     total = int(df["count"].sum())
@@ -199,10 +216,10 @@ def kpi_row(df: pd.DataFrame, prev_df: pd.DataFrame = None):
             delta_avg = f"{s2}{diff_a}건 ({s2}{pct_a}%)"
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("총 발생건수",        f"{total:,}건", delta_total, delta_color="inverse")
-    c2.metric("구간 평균 발생건수", f"{avg}건",     delta_avg,   delta_color="inverse")
-    c3.metric("최다 단일구간",      f"{max_c:,}건")
-    c4.metric("최고위험 노선",      top_r)
+    _metric_yoy(c1, "총 발생건수",        f"{total:,}건", delta_total)
+    _metric_yoy(c2, "구간 평균 발생건수", f"{avg}건",     delta_avg)
+    c3.metric("최다 발생건",   f"{max_c:,}건")
+    c4.metric("최고위험 노선", top_r)
 
 def chart_route(df: pd.DataFrame):
     """노선별 발생건수 수평 막대."""
@@ -417,18 +434,29 @@ with tab2:
         kpi_row(yr_df, prev_df)
         st.divider()
 
-        # 지도 + 노선 차트
-        col_m, col_c = st.columns([1.3, 0.7])
-        with col_m:
-            st.subheader("📍 지점 지도")
-            deck = make_map(yr_df)
-            if deck:
-                st.pydeck_chart(deck, use_container_width=True, key="tab2_map")
+        # 지도 — 상행선 / 하행선 분리
+        st.subheader("📍 지점 지도")
+        map_up = yr_df[yr_df["direction"].str.contains("상", na=False)]
+        map_dn = yr_df[yr_df["direction"].str.contains("하", na=False)]
+        col_up, col_dn = st.columns(2)
+        with col_up:
+            st.markdown("**⬆ 상행선**")
+            deck_up = make_map(map_up)
+            if deck_up:
+                st.pydeck_chart(deck_up, use_container_width=True, key="tab2_map_up")
             else:
-                st.info("지도에 표시할 위치 데이터가 없습니다.")
-        with col_c:
-            st.subheader("🛣️ 노선별 발생건수 (상위 15)")
-            st.plotly_chart(chart_route(yr_df), use_container_width=True, key="tab2_route")
+                st.info("상행선 데이터가 없습니다.")
+        with col_dn:
+            st.markdown("**⬇ 하행선**")
+            deck_dn = make_map(map_dn)
+            if deck_dn:
+                st.pydeck_chart(deck_dn, use_container_width=True, key="tab2_map_dn")
+            else:
+                st.info("하행선 데이터가 없습니다.")
+
+        # 노선 차트
+        st.subheader("🛣️ 노선별 발생건수 (상위 15)")
+        st.plotly_chart(chart_route(yr_df), use_container_width=True, key="tab2_route")
 
         st.divider()
 
