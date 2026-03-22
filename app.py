@@ -523,7 +523,7 @@ def chart_region(df: pd.DataFrame):
     )
     return fig
 
-def detail_table(df: pd.DataFrame, key_prefix: str):
+def detail_table(df: pd.DataFrame, key_prefix: str, enable_selection: bool = False):
     """검색·필터(연쇄)·테이블·CSV 다운로드 블록."""
     # ── 필터 헤더 라벨 ────────────────────────────────────────────────
     lc1, lc2, lc3, lc4, lc5 = st.columns([2, 1.4, 1.4, 1.4, 1])
@@ -603,12 +603,24 @@ def detail_table(df: pd.DataFrame, key_prefix: str):
             {"selector": "td", "props": [("text-align", "center"), ("color", "black")]},
         ])
     )
-    st.caption(f"총 {len(disp):,}건")
-    st.dataframe(styled, use_container_width=True, height=360)
+    st.caption(f"총 {len(disp):,}건" + (" | 행을 클릭하면 해당 위치만 지도에 표시됩니다." if enable_selection else ""))
+    event = st.dataframe(
+        styled,
+        use_container_width=True,
+        height=360,
+        on_select="rerun" if enable_selection else "ignore",
+        selection_mode="single-row",
+        key=f"{key_prefix}_df",
+    )
     csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("⬇ CSV 내보내기", data=csv_out,
                        file_name=f"roadkill_{key_prefix}.csv",
                        mime="text/csv", key=f"{key_prefix}_dl")
+
+    if enable_selection:
+        sel_rows = event.selection.rows if hasattr(event, "selection") else []
+        sel_df = fdf.iloc[sel_rows] if sel_rows else None
+        return fdf, sel_df
     return fdf
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -808,11 +820,16 @@ with tab2:
 
         # 상세 테이블 + 지점 지도
         st.subheader(f"📋 {sel_year}년 상세 데이터")
-        filtered_df = detail_table(yr_df, str(sel_year))
+        filtered_df, selected_df = detail_table(yr_df, str(sel_year), enable_selection=True)
 
         yr_min = int(yr_df["count"].min()) if not yr_df.empty else 0
         yr_max = int(yr_df["count"].max()) if not yr_df.empty else 1
-        map_src = filtered_df if (filtered_df is not None and not filtered_df.empty) else yr_df
+        if selected_df is not None and not selected_df.empty:
+            map_src = selected_df
+        elif filtered_df is not None and not filtered_df.empty:
+            map_src = filtered_df
+        else:
+            map_src = yr_df
         deck_all = make_map_lines(map_src, yr_min, yr_max)
         if deck_all:
             st.pydeck_chart(deck_all, use_container_width=True, key="tab2_map_all")
