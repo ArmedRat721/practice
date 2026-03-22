@@ -383,13 +383,13 @@ def _delta_html(label: str, delta_str: str) -> str:
         arrow = "▲ " if is_up else "▼ "
         num   = delta_str[1:]
     return (
-        f'<p style="color:#888;font-size:0.70rem;margin:6px 0 2px 0">{label}</p>'
-        f'<p style="color:{color};font-size:0.88rem;margin:0;font-weight:600">{arrow}{num}</p>'
+        f'<p style="color:#888;font-size:0.70rem;margin:6px 0 2px 0;white-space:nowrap">{label}</p>'
+        f'<p style="color:{color};font-size:0.88rem;margin:0;font-weight:600;white-space:nowrap">{arrow}{num}</p>'
     )
 
 def _metric_yoy(col, label: str, value: str, delta_str=None, avg_delta_str=None):
     """커스텀 KPI 카드. delta_str=작년대비, avg_delta_str=평균대비 (평균대비가 왼쪽)."""
-    _CARD = "background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb;min-height:130px"
+    _CARD = "background:#ffffff;border-radius:8px;padding:14px 18px 12px;border:1px solid #e5e7eb;height:165px;box-sizing:border-box;overflow:hidden"
     if delta_str is None and avg_delta_str is None:
         col.markdown(f"""
 <div style="{_CARD}">
