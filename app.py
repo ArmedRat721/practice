@@ -604,33 +604,28 @@ def detail_table(df: pd.DataFrame, key_prefix: str, enable_selection: bool = Fal
         ])
     )
     if enable_selection:
-        sel_key = f"{key_prefix}_sel"
-        n_rows  = len(disp)
-        saved   = st.session_state.get(sel_key, [])
-        if len(saved) != n_rows:
-            saved = [False] * n_rows
+        cap_col, chk_col = st.columns([6, 1])
+        cap_col.caption(f"총 {len(disp):,}건 | 행 클릭으로 위치 선택")
+        all_sel = chk_col.checkbox("전체 선택", key=f"{key_prefix}_all_sel")
 
-        disp_sel = disp.copy()
-        disp_sel.insert(0, "선택", saved)
-
-        st.caption(f"총 {n_rows:,}건")
-        edited = st.data_editor(
-            disp_sel,
+        event = st.dataframe(
+            styled,
             use_container_width=True,
             height=360,
-            hide_index=False,
-            disabled=[c for c in disp_sel.columns if c != "선택"],
-            column_config={"선택": st.column_config.CheckboxColumn("선택", default=False)},
+            on_select="rerun",
+            selection_mode="multi-row",
             key=f"{key_prefix}_df",
         )
-        st.session_state[sel_key] = edited["선택"].tolist()
-
         csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
         st.download_button("⬇ CSV 내보내기", data=csv_out,
                            file_name=f"roadkill_{key_prefix}.csv",
                            mime="text/csv", key=f"{key_prefix}_dl")
-        mask   = edited["선택"].values
-        sel_df = fdf[mask] if mask.any() else None
+
+        if all_sel:
+            sel_df = None          # 전체 선택 → 지도에 전체 표시
+        else:
+            sel_rows = event.selection.rows if hasattr(event, "selection") else []
+            sel_df = fdf.iloc[sel_rows] if sel_rows else None
         return fdf, sel_df
 
     st.caption(f"총 {len(disp):,}건")
