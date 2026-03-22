@@ -649,6 +649,39 @@ st.caption(f"데이터 출처: 한국도로공사 공공데이터 | 분석 기�
 # ══════════════════════════════════════════════════════════════════════════════
 tab1, tab2, tab3 = st.tabs(["📊 전체 연도 비교", "📅 연도별 상세 보기", "⚙️ 데이터 관리"])
 
+# 새로고침 후 마지막 탭 유지: URL ?tab=N 기록 & 복원
+import streamlit.components.v1 as _components
+_components.html("""
+<script>
+(function() {
+  var params = new URLSearchParams(window.parent.location.search);
+  var target = parseInt(params.get('tab') || '0');
+
+  function addListeners(tabs) {
+    tabs.forEach(function(el, i) {
+      el.addEventListener('click', function() {
+        var url = new URL(window.parent.location.href);
+        url.searchParams.set('tab', i);
+        window.parent.history.replaceState({}, '', url.toString());
+      });
+    });
+  }
+
+  function tryActivate(remaining) {
+    var tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+    if (tabs.length >= 3) {
+      addListeners(tabs);
+      if (target > 0) { tabs[target].click(); }
+    } else if (remaining > 0) {
+      setTimeout(function() { tryActivate(remaining - 1); }, 150);
+    }
+  }
+
+  setTimeout(function() { tryActivate(30); }, 300);
+})();
+</script>
+""", height=0)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 1 : 전체 연도 비교
 # ─────────────────────────────────────────────────────────────────────────────
