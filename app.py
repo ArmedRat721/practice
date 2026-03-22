@@ -523,8 +523,8 @@ def chart_region(df: pd.DataFrame):
     )
     return fig
 
-def detail_table(df: pd.DataFrame, key_prefix: str, selectable: bool = False):
-    """검색·필터(연쇄)·테이블·CSV 다운로드 블록. selectable=True 시 행 선택 지원."""
+def detail_table(df: pd.DataFrame, key_prefix: str):
+    """검색·필터(연쇄)·테이블·CSV 다운로드 블록."""
     # ── 필터 헤더 라벨 ────────────────────────────────────────────────
     lc1, lc2, lc3, lc4, lc5 = st.columns([2, 1.4, 1.4, 1.4, 1])
     lc1.caption("검색")
@@ -604,28 +604,12 @@ def detail_table(df: pd.DataFrame, key_prefix: str, selectable: bool = False):
         ])
     )
     st.caption(f"총 {len(disp):,}건")
-
-    sel_fdf = None
-    if selectable:
-        event = st.dataframe(
-            disp,
-            use_container_width=True,
-            height=360,
-            on_select="rerun",
-            selection_mode="single-row",
-            key=f"{key_prefix}_tbl",
-        )
-        sel_rows = event.selection.rows
-        if sel_rows:
-            sel_fdf = fdf.iloc[[sel_rows[0]]]
-    else:
-        st.dataframe(styled, use_container_width=True, height=360)
-
+    st.dataframe(styled, use_container_width=True, height=360)
     csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("⬇ CSV 내보내기", data=csv_out,
                        file_name=f"roadkill_{key_prefix}.csv",
                        mime="text/csv", key=f"{key_prefix}_dl")
-    return fdf, sel_fdf
+    return fdf
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 헤더
@@ -763,7 +747,7 @@ with tab1:
 
         # 전체 상세 테이블
         st.subheader("📋 전체 상세 데이터")
-        detail_table(all_df, "all"  )  # Tab1: 선택 불필요
+        detail_table(all_df, "all")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -824,16 +808,11 @@ with tab2:
 
         # 상세 테이블 + 지점 지도
         st.subheader(f"📋 {sel_year}년 상세 데이터")
-        filtered_df, selected_row = detail_table(yr_df, str(sel_year), selectable=True)
+        filtered_df = detail_table(yr_df, str(sel_year))
 
         yr_min = int(yr_df["count"].min()) if not yr_df.empty else 0
         yr_max = int(yr_df["count"].max()) if not yr_df.empty else 1
-        if selected_row is not None and not selected_row.empty:
-            map_src = selected_row
-        elif filtered_df is not None and not filtered_df.empty:
-            map_src = filtered_df
-        else:
-            map_src = yr_df
+        map_src = filtered_df if (filtered_df is not None and not filtered_df.empty) else yr_df
         deck_all = make_map_lines(map_src, yr_min, yr_max)
         if deck_all:
             st.pydeck_chart(deck_all, use_container_width=True, key="tab2_map_all")
