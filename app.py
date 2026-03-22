@@ -222,6 +222,20 @@ if "all_data" not in st.session_state:
 
 all_data: dict = st.session_state.all_data
 
+# 파일명 메타 로드 (새로고침 후에도 유지)
+if "filenames" not in st.session_state:
+    _fn_path = DATA_DIR / "filenames.json"
+    if _fn_path.exists():
+        import json as _json
+        try:
+            _raw = _json.loads(_fn_path.read_text(encoding="utf-8"))
+            # 키를 int로 통일
+            st.session_state["filenames"] = {int(k): v for k, v in _raw.items()}
+        except Exception:
+            st.session_state["filenames"] = {}
+    else:
+        st.session_state["filenames"] = {}
+
 # ── dir_yn 컬럼 역호환 패치 ─────────────────────────────────────────────────
 # 구버전 캐시 데이터에 dir_yn 컬럼이 없을 경우 즉석 생성
 for _yr, _df in all_data.items():
@@ -844,11 +858,21 @@ with tab3:
         df_new = parse_csv_bytes(raw, year)
         st.session_state.all_data[year] = df_new
         (DATA_DIR / f"{year}_roadkill.csv").write_bytes(raw)
-        # 원본 파일명 세션에 보관
+        # 원본 파일명 세션 + 디스크에 보관
         if "filenames" not in st.session_state:
             st.session_state["filenames"] = {}
         if orig_name:
             st.session_state["filenames"][year] = orig_name
+        import json as _json
+        _fn_path = DATA_DIR / "filenames.json"
+        try:
+            _fn_path.write_text(
+                _json.dumps({str(k): v for k, v in st.session_state["filenames"].items()},
+                             ensure_ascii=False),
+                encoding="utf-8"
+            )
+        except Exception:
+            pass
         st.cache_data.clear()
         st.session_state.pop("confirm_overwrite", None)
         st.session_state.pop("confirm_new",       None)
@@ -981,8 +1005,18 @@ with tab3:
                 p = DATA_DIR / f"{d_y}_roadkill.csv"
                 if p.exists():
                     p.unlink()
-                # 파일명 세션에서도 제거
+                # 파일명 세션 + 디스크에서 제거
                 st.session_state.get("filenames", {}).pop(d_y, None)
+                import json as _json
+                _fn_path = DATA_DIR / "filenames.json"
+                try:
+                    _fn_path.write_text(
+                        _json.dumps({str(k): v for k, v in st.session_state.get("filenames", {}).items()},
+                                     ensure_ascii=False),
+                        encoding="utf-8"
+                    )
+                except Exception:
+                    pass
                 st.session_state.pop("confirm_delete", None)
                 st.success(f"✅ {d_y}년 데이터가 삭제되었습니다.")
                 st.rerun()
