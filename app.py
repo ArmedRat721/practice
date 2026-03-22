@@ -595,49 +595,6 @@ def detail_table(df: pd.DataFrame, key_prefix: str, enable_selection: bool = Fal
     if "발생건수" in disp.columns:
         disp["발생건수"] = disp["발생건수"].astype(str) + "건"
     disp.index = range(1, len(disp) + 1)
-    if enable_selection:
-        sel_key   = f"{key_prefix}_sel"
-        n_rows    = len(disp)
-
-        # 전체 선택 / 전체 취소 버튼
-        b1, b2, _ = st.columns([1, 1, 6])
-        if b1.button("전체 선택", key=f"{key_prefix}_all", use_container_width=True):
-            st.session_state[sel_key] = [True]  * n_rows
-            st.rerun()
-        if b2.button("전체 취소", key=f"{key_prefix}_none", use_container_width=True):
-            st.session_state[sel_key] = [False] * n_rows
-            st.rerun()
-
-        # 세션 상태에서 체크 목록 읽기 (행 수 바뀌면 초기화)
-        saved = st.session_state.get(sel_key, [])
-        if len(saved) != n_rows:
-            saved = [False] * n_rows
-
-        disp_sel = disp.copy()
-        disp_sel.insert(0, "선택", saved)
-
-        edited = st.data_editor(
-            disp_sel,
-            use_container_width=True,
-            height=360,
-            hide_index=False,
-            disabled=[c for c in disp_sel.columns if c != "선택"],
-            column_config={"선택": st.column_config.CheckboxColumn("선택", default=False)},
-            key=f"{key_prefix}_df",
-        )
-        st.session_state[sel_key] = edited["선택"].tolist()
-
-        st.caption(f"총 {len(disp):,}건 | 체크박스로 행을 선택하면 해당 위치만 지도에 표시됩니다.")
-        csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-        st.download_button("⬇ CSV 내보내기", data=csv_out,
-                           file_name=f"roadkill_{key_prefix}.csv",
-                           mime="text/csv", key=f"{key_prefix}_dl")
-
-        mask = edited["선택"].values
-        sel_df = fdf[mask] if mask.any() else None
-        return fdf, sel_df
-
-    # ── 선택 불필요한 탭(전체집계 등) ────────────────────────────────
     styled = (
         disp.style
         .set_properties(**{"text-align": "center", "color": "black"})
@@ -646,12 +603,24 @@ def detail_table(df: pd.DataFrame, key_prefix: str, enable_selection: bool = Fal
             {"selector": "td", "props": [("text-align", "center"), ("color", "black")]},
         ])
     )
-    st.caption(f"총 {len(disp):,}건")
-    st.dataframe(styled, use_container_width=True, height=360)
+    st.caption(f"총 {len(disp):,}건" + (" | 행을 클릭하면 해당 위치만 지도에 표시됩니다." if enable_selection else ""))
+    event = st.dataframe(
+        styled,
+        use_container_width=True,
+        height=360,
+        on_select="rerun" if enable_selection else "ignore",
+        selection_mode="single-row",
+        key=f"{key_prefix}_df",
+    )
     csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button("⬇ CSV 내보내기", data=csv_out,
                        file_name=f"roadkill_{key_prefix}.csv",
                        mime="text/csv", key=f"{key_prefix}_dl")
+
+    if enable_selection:
+        sel_rows = event.selection.rows if hasattr(event, "selection") else []
+        sel_df = fdf.iloc[sel_rows] if sel_rows else None
+        return fdf, sel_df
     return fdf
 
 # ══════════════════════════════════════════════════════════════════════════════
