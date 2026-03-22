@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import chardet
 import re
+import json
 import plotly.express as px
 import plotly.graph_objects as go
 import pydeck as pdk
@@ -840,14 +841,22 @@ with tab3:
         )
 
     # ── 업로드 실행 함수 ────────────────────────────────────────────────────
-    def _do_upload(year: int, raw: bytes):
+    def _do_upload(year: int, raw: bytes, orig_name: str = ""):
         df_new = parse_csv_bytes(raw, year)
         st.session_state.all_data[year] = df_new
         (DATA_DIR / f"{year}_roadkill.csv").write_bytes(raw)
+        # 원본 파일명 저장
+        meta_path = DATA_DIR / "filenames.json"
+        meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
+        if orig_name:
+            meta[str(year)] = orig_name
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False), "utf-8")
         st.cache_data.clear()
         st.session_state.pop("confirm_overwrite", None)
+        st.session_state.pop("confirm_new",       None)
         st.session_state.pop("pending_year",      None)
         st.session_state.pop("pending_bytes",     None)
+        st.session_state.pop("pending_name",      None)
         st.success(f"✅ {year}년 데이터 {len(df_new):,}건 추가 완료! 다른 탭으로 이동하면 바로 반영됩니다.")
         st.rerun()
 
@@ -855,16 +864,17 @@ with tab3:
         if up_file is None:
             st.warning("⚠️ CSV 파일을 먼저 선택해주세요.")
         elif int(up_year) in all_data:
-            # 이미 존재 → 바이트 저장 후 확인 요청
+            # 이미 존재 → 덮어쓰기 확인
             st.session_state["pending_year"]      = int(up_year)
             st.session_state["pending_bytes"]     = up_file.read()
+            st.session_state["pending_name"]      = up_file.name
             st.session_state["confirm_overwrite"] = True
         else:
-            with st.spinner(f"{int(up_year)}년 데이터 처리 중…"):
-                try:
-                    _do_upload(int(up_year), up_file.read())
-                except Exception as e:
-                    st.error(f"❌ 오류: {e}")
+            # 신규 연도 → 추가 확인
+            st.session_state["pending_year"]  = int(up_year)
+            st.session_state["pending_bytes"] = up_file.read()
+            st.session_state["pending_name"]  = up_file.name
+            st.session_state["confirm_new"]   = True
 
     # ── 중복 연도 덮어쓰기 확인 알림 ────────────────────────────────────────
     if st.session_state.get("confirm_overwrite"):
@@ -879,7 +889,8 @@ with tab3:
                          use_container_width=True, key="btn_overwrite_yes"):
                 with st.spinner(f"{dup_y}년 데이터 덮어쓰기 중…"):
                     try:
-                        _do_upload(dup_y, st.session_state["pending_bytes"])
+                        _do_upload(dup_y, st.session_state["pending_bytes"],
+                                   st.session_state.get("pending_name", ""))
                     except Exception as e:
                         st.error(f"❌ 오류: {e}")
         with btn_no:
@@ -889,6 +900,28 @@ with tab3:
                 st.session_state.pop("pending_bytes",     None)
                 st.rerun()
 
+    # ── 신규 연도 추가 확인 알림 ────────────────────────────────────────────
+    if st.session_state.get("confirm_new"):
+        new_y = st.session_state["pending_year"]
+        st.info(f"📂 **{new_y}년** 데이터를 추가합니다. 정말 추가하시겠습니까?")
+        btn_ny, btn_nn = st.columns([1, 1])
+        with btn_ny:
+            if st.button("✅ 예, 추가", type="primary",
+                         use_container_width=True, key="btn_new_yes"):
+                with st.spinner(f"{new_y}년 데이터 처리 중…"):
+                    try:
+                        _do_upload(new_y, st.session_state["pending_bytes"],
+                                   st.session_state.get("pending_name", ""))
+                    except Exception as e:
+                        st.error(f"❌ 오류: {e}")
+        with btn_nn:
+            if st.button("❌ 취소", use_container_width=True, key="btn_new_no"):
+                st.session_state.pop("confirm_new",   None)
+                st.session_state.pop("pending_year",  None)
+                st.session_state.pop("pending_bytes", None)
+                st.session_state.pop("pending_name",  None)
+                st.rerun()
+
     st.divider()
 
     # ── 등록된 연도 목록 ─────────────────────────────────────────────────────
@@ -896,6 +929,8 @@ with tab3:
     if not all_data:
         st.info("등록된 데이터가 없습니다.")
     else:
+        meta_path = DATA_DIR / "filenames.json"
+        fn_meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
         summary_rows = []
         for y in sorted(all_data.keys(), reverse=True):
             ydf = all_data[y]
@@ -905,6 +940,7 @@ with tab3:
                 "구간 수":       f"{len(ydf):,}개",
                 "노선 수":       f"{ydf['route'].nunique()}개",
                 "지역(본부) 수": f"{ydf['region'].nunique()}개",
+                "파일명":        fn_meta.get(str(y), f"{y}_roadkill.csv"),
             })
         st.dataframe(
             pd.DataFrame(summary_rows),
@@ -935,9 +971,29 @@ with tab3:
             st.write("")
             if st.button("🗑️ 삭제", type="secondary",
                          use_container_width=True, key="btn_delete"):
-                del st.session_state.all_data[del_year]
-                p = DATA_DIR / f"{del_year}_roadkill.csv"
+                st.session_state["confirm_delete"] = del_year
+
+    if st.session_state.get("confirm_delete") is not None:
+        d_y = st.session_state["confirm_delete"]
+        st.warning(f"⚠️ **{d_y}년** 데이터를 삭제합니다. 정말 삭제하시겠습니까?")
+        btn_dy, btn_dn = st.columns([1, 1])
+        with btn_dy:
+            if st.button("✅ 예, 삭제", type="primary",
+                         use_container_width=True, key="btn_del_yes"):
+                del st.session_state.all_data[d_y]
+                p = DATA_DIR / f"{d_y}_roadkill.csv"
                 if p.exists():
                     p.unlink()
-                st.success(f"✅ {del_year}년 데이터가 삭제되었습니다.")
+                # 파일명 메타도 제거
+                meta_path = DATA_DIR / "filenames.json"
+                if meta_path.exists():
+                    fn_meta = json.loads(meta_path.read_text("utf-8"))
+                    fn_meta.pop(str(d_y), None)
+                    meta_path.write_text(json.dumps(fn_meta, ensure_ascii=False), "utf-8")
+                st.session_state.pop("confirm_delete", None)
+                st.success(f"✅ {d_y}년 데이터가 삭제되었습니다.")
+                st.rerun()
+        with btn_dn:
+            if st.button("❌ 취소", use_container_width=True, key="btn_del_no"):
+                st.session_state.pop("confirm_delete", None)
                 st.rerun()
