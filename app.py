@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import chardet
 import re
-import json
 import plotly.express as px
 import plotly.graph_objects as go
 import pydeck as pdk
@@ -845,12 +844,11 @@ with tab3:
         df_new = parse_csv_bytes(raw, year)
         st.session_state.all_data[year] = df_new
         (DATA_DIR / f"{year}_roadkill.csv").write_bytes(raw)
-        # 원본 파일명 저장
-        meta_path = DATA_DIR / "filenames.json"
-        meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
+        # 원본 파일명 세션에 보관
+        if "filenames" not in st.session_state:
+            st.session_state["filenames"] = {}
         if orig_name:
-            meta[str(year)] = orig_name
-        meta_path.write_text(json.dumps(meta, ensure_ascii=False), "utf-8")
+            st.session_state["filenames"][year] = orig_name
         st.cache_data.clear()
         st.session_state.pop("confirm_overwrite", None)
         st.session_state.pop("confirm_new",       None)
@@ -929,8 +927,7 @@ with tab3:
     if not all_data:
         st.info("등록된 데이터가 없습니다.")
     else:
-        meta_path = DATA_DIR / "filenames.json"
-        fn_meta = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else {}
+        fn_meta = st.session_state.get("filenames", {})
         summary_rows = []
         for y in sorted(all_data.keys(), reverse=True):
             ydf = all_data[y]
@@ -940,7 +937,7 @@ with tab3:
                 "구간 수":       f"{len(ydf):,}개",
                 "노선 수":       f"{ydf['route'].nunique()}개",
                 "지역(본부) 수": f"{ydf['region'].nunique()}개",
-                "파일명":        fn_meta.get(str(y), f"{y}_roadkill.csv"),
+                "파일명":        fn_meta.get(y, f"{y}_roadkill.csv"),
             })
         st.dataframe(
             pd.DataFrame(summary_rows),
@@ -984,12 +981,8 @@ with tab3:
                 p = DATA_DIR / f"{d_y}_roadkill.csv"
                 if p.exists():
                     p.unlink()
-                # 파일명 메타도 제거
-                meta_path = DATA_DIR / "filenames.json"
-                if meta_path.exists():
-                    fn_meta = json.loads(meta_path.read_text("utf-8"))
-                    fn_meta.pop(str(d_y), None)
-                    meta_path.write_text(json.dumps(fn_meta, ensure_ascii=False), "utf-8")
+                # 파일명 세션에서도 제거
+                st.session_state.get("filenames", {}).pop(d_y, None)
                 st.session_state.pop("confirm_delete", None)
                 st.success(f"✅ {d_y}년 데이터가 삭제되었습니다.")
                 st.rerun()
