@@ -609,7 +609,7 @@ def detail_table(df: pd.DataFrame, key_prefix: str, enable_selection: bool = Fal
         use_container_width=True,
         height=360,
         on_select="rerun" if enable_selection else "ignore",
-        selection_mode="single-row",
+        selection_mode="multi-row",
         key=f"{key_prefix}_df",
     )
     csv_out = disp.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
